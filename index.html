@@ -77,6 +77,21 @@ header .btn.pri{background:var(--acc);border-color:var(--acc)}
 .tl .meta{font-size:12px;color:var(--sub)}
 .tl .txt{white-space:pre-wrap}
 .links a{display:block;font-size:12px;color:var(--acc);word-break:break-all}
+.chips{display:flex;flex-wrap:wrap;gap:6px;padding-top:2px}
+.fchip{border:1.5px solid var(--line);background:#fff;border-radius:18px;padding:5px 13px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink)}
+.fchip:hover{border-color:var(--acc)}.fchip.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.phwrap{border:1.5px dashed var(--line);border-radius:8px;padding:10px}.phwrap.over{border-color:var(--acc);background:var(--accS)}
+.photos{display:flex;flex-wrap:wrap;gap:10px}
+.ph{position:relative;width:128px}
+.phimg{width:128px;height:96px;border-radius:6px;background:#f3f5f8;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:zoom-in;border:1px solid var(--line)}
+.phimg img{width:100%;height:100%;object-fit:cover}
+.phcap{font-size:11px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.phx{position:absolute;top:4px;right:4px;border:0;background:rgba(0,0,0,.55);color:#fff;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;line-height:22px;padding:0}
+.lb{position:fixed;inset:0;background:rgba(10,15,25,.92);z-index:100;display:flex;align-items:center;justify-content:center}
+.lb img{max-width:92vw;max-height:84vh;box-shadow:0 4px 30px #000}
+.lbbar{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 16px;color:#fff;font-size:13px}
+.lbnav{position:absolute;top:50%;transform:translateY(-50%);border:0;background:rgba(255,255,255,.15);color:#fff;font-size:40px;width:52px;height:72px;cursor:pointer;border-radius:6px}
+.lbnav.l{left:12px}.lbnav.r{right:12px}
 .toast{position:fixed;right:16px;bottom:16px;background:#1f2d3d;color:#fff;padding:10px 16px;border-radius:8px;opacity:0;transition:.25s;z-index:99;pointer-events:none}
 .toast.on{opacity:1}.toast.err{background:var(--bad)}
 .chart{width:100%;height:auto;display:block}
@@ -105,10 +120,10 @@ header .btn.pri{background:var(--acc);border-color:var(--acc)}
 <main id="main"></main>
 <input type="file" id="fileIn" accept=".json,application/json" hidden>
 <div class="toast" id="toast"></div>
-<datalist id="dlPeople"></datalist><datalist id="dlCust"></datalist><datalist id="dlSite"></datalist>
+<datalist id="dlPeople"></datalist><datalist id="dlCust"></datalist><datalist id="dlSite"></datalist><datalist id="dlModel"></datalist>
 <script>
 'use strict';
-const VER='V1.00', SCHEMA=1, LS='CQ_DB';
+const VER='V1.10', SCHEMA=1, LS='CQ_DB';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -129,18 +144,19 @@ const TLTYPE=['電話','Mail','到場','內部討論','客戶回覆','其他'];
 
 function defMaster(){return{
   customers:[], people:[],
-  families:['乾式螺旋泵','羅茨泵','渦輪分子泵','油封式旋片泵','爪式泵','檢漏儀','其他'],
+  families:['R5','Mink','COBRA','Seco','Dolphin','Panda','Puma','Samos','Fossa','Huckepack','其他品牌'],
   categories:[{zh:'異音/振動',en:'Noise / Vibration'},{zh:'過熱',en:'Overheating'},{zh:'抽速不足/真空度異常',en:'Pumping speed / Vacuum level'},{zh:'漏油/漏水',en:'Oil / Water leak'},{zh:'電氣/控制異常',en:'Electrical / Control'},{zh:'停機/無法啟動',en:'Trip / Fails to start'},{zh:'維修品質',en:'Repair quality'},{zh:'交期延誤',en:'Delivery delay'},{zh:'服務態度/溝通',en:'Service / Communication'},{zh:'報價/帳務',en:'Quotation / Billing'},{zh:'其他',en:'Other'}],
   sources:[{zh:'Mail',en:'Email'},{zh:'電話',en:'Phone'},{zh:'業務轉達',en:'Via Sales'},{zh:'LINE',en:'LINE'},{zh:'現場反映',en:'On-site'},{zh:'集團轉介',en:'Group referral'},{zh:'其他',en:'Other'}],
   costTypes:[{zh:'保固',en:'Warranty'},{zh:'合約內',en:'Contract'},{zh:'收費',en:'Chargeable'},{zh:'善意處理',en:'Goodwill'},{zh:'待定',en:'TBD'}],
   severities:[{code:'A',zh:'停機',en:'Line down',respVal:4,respUnit:'h',actDays:3},{code:'B',zh:'影響生產',en:'Production impact',respVal:1,respUnit:'wd',actDays:5},{code:'C',zh:'一般',en:'General',respVal:3,respUnit:'wd',actDays:10}]
 }}
 function blankDB(){return{schemaVer:SCHEMA,app:'CQ',updatedAt:'',master:defMaster(),cases:[]}}
-function migrate(d){d.master=Object.assign(defMaster(),d.master||{});d.cases=d.cases||[];d.cases.forEach(c=>{c.timeline=c.timeline||[];c.d8=c.d8||{on:false}});d.schemaVer=SCHEMA;return d}
+const OLDFAM='乾式螺旋泵|羅茨泵|渦輪分子泵|油封式旋片泵|爪式泵|檢漏儀|其他';
+function migrate(d){d.master=Object.assign(defMaster(),d.master||{});if((d.master.families||[]).join('|')===OLDFAM)d.master.families=defMaster().families;d.cases=d.cases||[];d.cases.forEach(c=>{c.timeline=c.timeline||[];c.d8=c.d8||{on:false};c.photos=c.photos||[]});d.schemaVer=SCHEMA;return d}
 let DB=null;try{DB=JSON.parse(localStorage.getItem(LS))}catch(e){}
 if(!DB||DB.app!=='CQ')DB=blankDB();migrate(DB);
 
-function blankCase(){const m=DB.master;return{id:uid(),no:'',status:'new',receivedAt:nowL(),source:(m.sources[0]||{}).zh||'',receiver:'',customer:'',site:'',contact:'',contactInfo:'',family:'',model:'',serial:'',woNo:'',severity:'B',owner:'',desc:'',attach:'',firstRespAt:'',category:'',handle:'',measureAt:'',phenomenon:'',containment:'',result:'',custConfirmAt:'',custReply:'',closedAt:'',costType:'',rootCause:'',permanent:'',d8:{on:false},timeline:[],createdAt:'',updatedAt:''}}
+function blankCase(){const m=DB.master;return{id:uid(),no:'',status:'new',receivedAt:nowL(),source:(m.sources[0]||{}).zh||'',receiver:'',customer:'',site:'',contact:'',contactInfo:'',family:'',model:'',serial:'',woNo:'',severity:'B',owner:'',desc:'',attach:'',firstRespAt:'',category:'',handle:'',measureAt:'',phenomenon:'',containment:'',result:'',custConfirmAt:'',custReply:'',closedAt:'',costType:'',rootCause:'',permanent:'',d8:{on:false},timeline:[],photos:[],createdAt:'',updatedAt:''}}
 
 /* ---------- 時效 ---------- */
 function addWD(d,n){const r=new Date(d);let k=0;while(k<n){r.setDate(r.getDate()+1);const w=r.getDay();if(w!==0&&w!==6)k++}return r}
@@ -162,32 +178,37 @@ function persist(){DB.updatedAt=new Date().toISOString();try{localStorage.setIte
 function toast(msg,err){const t=$('#toast');t.textContent=msg;t.className='toast on'+(err?' err':'');clearTimeout(toast.t);toast.t=setTimeout(()=>t.className='toast',2600)}
 function genNo(c){const d=P(c.receivedAt)||new Date();const pre=`CQ-${String(d.getFullYear()).slice(2)}${pad(d.getMonth()+1)}-`;let m=0;DB.cases.forEach(x=>{if(x.no&&x.no.startsWith(pre)){const n=parseInt(x.no.slice(pre.length),10);if(n>m)m=n}});return pre+String(m+1).padStart(3,'0')}
 
-/* ---------- 檔案同步 (File System Access) ---------- */
-const FSA='showOpenFilePicker' in window;
-let FH=null,fileOK=false,fileStamp='',lastSync=null,saveTimer=null;
+/* ---------- 資料夾同步 (File System Access) ---------- */
+const FSA='showDirectoryPicker' in window;
+const DATAFILE='客戶問題點資料.json', PHOTODIR='photos';
+let DH=null,FH=null,PDH=null,fileOK=false,fileStamp='',lastSync=null,saveTimer=null;
 function idb(){return new Promise((res,rej)=>{const r=indexedDB.open('CQ_FS',1);r.onupgradeneeded=()=>r.result.createObjectStore('h');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 async function idbGet(k){try{const db=await idb();return await new Promise(res=>{const q=db.transaction('h').objectStore('h').get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>res(null)})}catch(e){return null}}
 async function idbSet(k,v){try{const db=await idb();db.transaction('h','readwrite').objectStore('h').put(v,k)}catch(e){}}
-async function ensurePerm(ask){if(!FH)return false;try{let p=await FH.queryPermission({mode:'readwrite'});if(p!=='granted'&&ask)p=await FH.requestPermission({mode:'readwrite'});fileOK=p==='granted'}catch(e){fileOK=false}return fileOK}
-const JTYPE=[{description:'JSON 資料檔',accept:{'application/json':['.json']}}];
-async function linkOpen(){try{const[h]=await showOpenFilePicker({types:JTYPE});FH=h;await idbSet('fh',h);await loadFromFile(true)}catch(e){if(e.name!=='AbortError')toast('開啟失敗：'+e.message,true)}}
-async function linkNew(){try{const h=await showSaveFilePicker({suggestedName:'客戶問題點資料.json',types:JTYPE});FH=h;await idbSet('fh',h);await ensurePerm(true);await writeFile(true);toast('已建立資料檔')}catch(e){if(e.name!=='AbortError')toast('建立失敗：'+e.message,true)}}
+async function ensurePerm(ask){if(!DH)return false;try{let p=await DH.queryPermission({mode:'readwrite'});if(p!=='granted'&&ask)p=await DH.requestPermission({mode:'readwrite'});fileOK=p==='granted'}catch(e){fileOK=false}
+  if(fileOK&&!FH){try{FH=await findDataFile(DH);PDH=await DH.getDirectoryHandle(PHOTODIR,{create:true})}catch(e){fileOK=false;toast('資料夾存取失敗：'+e.message,true)}}return fileOK}
+async function findDataFile(dir){
+  try{return await dir.getFileHandle(DATAFILE)}catch(e){}
+  for await(const[name,h]of dir.entries()){if(h.kind==='file'&&/\.json$/i.test(name)){try{const d=JSON.parse(await(await h.getFile()).text());if(d&&d.app==='CQ')return h}catch(e){}}}
+  return await dir.getFileHandle(DATAFILE,{create:true})
+}
+async function linkDir(){try{const h=await showDirectoryPicker({id:'cq',mode:'readwrite'});DH=h;FH=null;PDH=null;photoCache.clear();await idbSet('dh',h);await loadFromFile(true)}catch(e){if(e.name!=='AbortError')toast('連結失敗：'+e.message,true)}}
 async function loadFromFile(ask){
   if(!await ensurePerm(ask)){updFile();return}
   try{
     const txt=await(await FH.getFile()).text();
-    if(!txt.trim()){await writeFile(true);return}
+    if(!txt.trim()){await writeFile(true);toast('已在資料夾建立 '+FH.name);return}
     const d=JSON.parse(txt);
-    if(d.app!=='CQ'){alert('這不是本系統的資料檔');FH=null;updFile();return}
-    if(DB.cases.length&&DB.updatedAt&&d.updatedAt&&DB.updatedAt>d.updatedAt&&!confirm('本機資料比檔案還新。\n確定＝以檔案內容覆蓋本機\n取消＝以本機資料覆寫檔案')){await writeFile(true);return}
+    if(d.app!=='CQ'){alert('資料檔不是本系統的格式');updFile();return}
+    if(DB.cases.length&&DB.updatedAt&&d.updatedAt&&DB.updatedAt>d.updatedAt&&!confirm('本機資料比資料夾裡的檔案還新。\n確定＝以檔案內容覆蓋本機\n取消＝以本機資料覆寫檔案')){await writeFile(true);return}
     DB=migrate(d);fileStamp=d.updatedAt||'';lastSync=new Date();
     localStorage.setItem(LS,JSON.stringify(DB));
     if(ST.tab==='edit'&&ST.draft&&!ST.isNew&&!ST.dirty){const c=DB.cases.find(x=>x.id===ST.draft.id);ST.draft=c?structuredClone(c):null;if(!c)ST.tab='list'}
-    updFile();render();toast('已載入資料檔')
+    updFile();render();toast('已載入資料')
   }catch(e){toast('讀取資料檔失敗：'+e.message,true);updFile()}
 }
 async function writeFile(force){
-  if(!FH||!await ensurePerm(false)){updFile();return}
+  if(!DH||!await ensurePerm(false)){updFile();return}
   try{
     if(!force){const t=await(await FH.getFile()).text();if(t.trim()){const d=JSON.parse(t);if(d.updatedAt&&fileStamp&&d.updatedAt>fileStamp&&d.updatedAt!==DB.updatedAt){
       if(!confirm('資料檔已被其他電腦更新（'+d.updatedAt.replace('T',' ').slice(0,16)+' UTC）。\n確定＝以目前資料覆蓋檔案\n取消＝改載入檔案內容'))return loadFromFile(false)}}}
@@ -196,17 +217,63 @@ async function writeFile(force){
   }catch(e){toast('寫入資料檔失敗：'+e.message,true)}
   updFile()
 }
-function scheduleFileSave(){if(!FH||!fileOK)return;clearTimeout(saveTimer);saveTimer=setTimeout(()=>writeFile(false),600)}
+function scheduleFileSave(){if(!DH||!fileOK)return;clearTimeout(saveTimer);saveTimer=setTimeout(()=>writeFile(false),600)}
 function updFile(){
   const fb=$('#filebar');let s;
-  if(!FSA)s=`<span class="fstat warn">此瀏覽器不支援直接存檔，請用匯入／匯出 JSON</span><button class="btn" data-a="imp">匯入 JSON</button><button class="btn pri" data-a="exp">匯出 JSON</button>`;
-  else if(!FH)s=`<span class="fstat warn">資料檔：未連結（目前只存在本機瀏覽器）</span><button class="btn pri" data-a="open">開啟資料檔</button><button class="btn" data-a="mk">建立新資料檔</button>`;
-  else if(!fileOK)s=`<span class="fstat warn">資料檔：${esc(FH.name)}　⚠ 需重新授權</span><button class="btn pri" data-a="perm">重新連結</button><button class="btn" data-a="open">開啟其他檔</button>`;
-  else s=`<span class="fstat">資料檔：${esc(FH.name)}　✓ ${lastSync?'同步 '+pad(lastSync.getHours())+':'+pad(lastSync.getMinutes()):''}</span><button class="btn" data-a="reload">重新載入</button><button class="btn" data-a="open">開啟其他檔</button>`;
+  if(!FSA)s=`<span class="fstat warn">此瀏覽器不支援資料夾存取（請用 Chrome／Edge），目前只能匯入／匯出 JSON，無法存照片</span><button class="btn" data-a="imp">匯入 JSON</button><button class="btn pri" data-a="exp">匯出 JSON</button>`;
+  else if(!DH)s=`<span class="fstat warn">資料夾：未連結（資料只存在本機瀏覽器，無法存照片）</span><button class="btn pri" data-a="link">連結資料夾</button>`;
+  else if(!fileOK)s=`<span class="fstat warn">資料夾：${esc(DH.name)}　⚠ 需重新授權</span><button class="btn pri" data-a="perm">重新連結</button><button class="btn" data-a="link">換資料夾</button>`;
+  else s=`<span class="fstat">資料夾：${esc(DH.name)}　✓ ${lastSync?'同步 '+pad(lastSync.getHours())+':'+pad(lastSync.getMinutes()):''}</span><button class="btn" data-a="reload">重新載入</button><button class="btn" data-a="link">換資料夾</button>`;
   fb.innerHTML=s
 }
 $('#filebar').onclick=e=>{const a=e.target.dataset.a;if(!a)return;
-  if(a==='open')linkOpen();else if(a==='mk')linkNew();else if(a==='perm'||a==='reload')loadFromFile(true);else if(a==='exp')exportJSON();else if(a==='imp')importJSON()};
+  if(a==='link')linkDir();else if(a==='perm'||a==='reload')loadFromFile(true);else if(a==='exp')exportJSON();else if(a==='imp')importJSON()};
+
+/* ---------- 照片 ---------- */
+const photoCache=new Map();
+async function compressImage(file,max=1600,q=0.82){
+  const bmp=await createImageBitmap(file);let{width:w,height:h}=bmp;const k=Math.min(1,max/Math.max(w,h));w=Math.round(w*k);h=Math.round(h*k);
+  const cv=document.createElement('canvas');cv.width=w;cv.height=h;const ctx=cv.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);ctx.drawImage(bmp,0,0,w,h);bmp.close&&bmp.close();
+  return await new Promise(r=>cv.toBlob(r,'image/jpeg',q))
+}
+async function addPhotos(files){
+  files=[...files].filter(f=>f&&f.type&&f.type.startsWith('image/'));if(!files.length)return;
+  if(!DH||!fileOK||!PDH){alert('上傳照片前，請先按右上角「連結資料夾」，選擇 SharePoint 同步的資料夾。\n照片會存在該資料夾的 photos 子資料夾。');return}
+  let n=0;
+  for(const f of files){try{
+    const blob=await compressImage(f);const fname=`${ST.draft.id}_${uid()}.jpg`;
+    const fh=await PDH.getFileHandle(fname,{create:true});const w=await fh.createWritable();await w.write(blob);await w.close();
+    photoCache.set(fname,URL.createObjectURL(blob));
+    ST.draft.photos.push({id:uid(),f:fname,name:f.name&&f.name!=='image.png'?f.name:'貼上圖片',at:nowL(),kb:Math.round(blob.size/1024)});n++
+  }catch(e){toast('照片處理失敗：'+(f.name||'')+' '+e.message,true)}}
+  if(n){markDirty();drawPhotos();toast(`已加入 ${n} 張照片，記得按儲存`)}
+}
+async function photoURL(fname){
+  if(photoCache.has(fname))return photoCache.get(fname);
+  if(!PDH)return null;
+  try{const f=await(await PDH.getFileHandle(fname)).getFile();const u=URL.createObjectURL(f);photoCache.set(fname,u);return u}catch(e){return null}
+}
+function drawPhotos(){
+  const b=$('#phBox');if(!b)return;const ps=ST.draft.photos||[];
+  if(!ps.length){b.innerHTML='<div class="hint">尚無照片。可按「上傳照片」、把圖檔拖曳到這裡，或在本頁按 Ctrl+V 貼上截圖。</div>';return}
+  b.innerHTML=ps.map(p=>`<div class="ph" data-ph="${p.id}"><div class="phimg" data-view="${p.id}"><span class="hint">載入中…</span></div><div class="phcap" title="${esc(p.name)}">${esc(trunc(p.name,16))}</div><button class="phx" data-phdel="${p.id}" title="移除">✕</button></div>`).join('');
+  ps.forEach(async p=>{const u=await photoURL(p.f);const el=b.querySelector(`[data-view="${p.id}"]`);if(!el)return;
+    el.innerHTML=u?`<img src="${u}" alt="" data-view="${p.id}">`:`<span class="hint">${DH&&fileOK?'找不到檔案':'連結資料夾後顯示'}</span>`})
+}
+async function viewPhoto(id){
+  const ps=ST.draft.photos||[];let i=ps.findIndex(p=>p.id===id);if(i<0)return;
+  const lb=document.createElement('div');lb.className='lb';document.body.appendChild(lb);
+  const show=async()=>{const p=ps[i];const u=await photoURL(p.f);
+    lb.innerHTML=`<div class="lbbar"><span>${i+1} / ${ps.length}　${esc(p.name)}　${esc(fDT(p.at))}　${p.kb||''} KB</span><span>${u?`<a class="btn sm" href="${u}" download="${esc(p.f)}">下載</a>`:''} <button class="btn sm" data-lb="x">關閉 ✕</button></span></div>
+      ${ps.length>1?'<button class="lbnav l" data-lb="p">‹</button><button class="lbnav r" data-lb="n">›</button>':''}
+      ${u?`<img src="${u}" alt="">`:'<div style="color:#fff">找不到檔案</div>'}`};
+  const close=()=>{lb.remove();document.removeEventListener('keydown',key)};
+  const key=e=>{if(e.key==='Escape')close();if(e.key==='ArrowRight'){i=(i+1)%ps.length;show()}if(e.key==='ArrowLeft'){i=(i-1+ps.length)%ps.length;show()}};
+  lb.onclick=e=>{const a=e.target.dataset.lb;if(a==='x'||e.target===lb)close();if(a==='n'){i=(i+1)%ps.length;show()}if(a==='p'){i=(i-1+ps.length)%ps.length;show()}};
+  document.addEventListener('keydown',key);show()
+}
+async function removePhotoFiles(fnames){if(!PDH||!fileOK)return;for(const f of fnames){try{await PDH.removeEntry(f)}catch(e){}photoCache.delete(f)}}
+
 function download(name,text,type){const b=new Blob([text],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
 function exportJSON(){download(`客戶問題點資料_${today()}.json`,JSON.stringify(DB,null,1),'application/json')}
 let fileMode='replace';
@@ -216,7 +283,7 @@ $('#fileIn').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const
   if(d.app!=='CQ'){alert('這不是本系統的資料檔');return}
   if(!confirm(`將以檔案內容（${(d.cases||[]).length} 件案件）取代目前資料，確定？`))return;
   DB=migrate(d);persist();render();toast('匯入完成')}catch(err){alert('讀取失敗：'+err.message)}};
-function findFamilies(obj){const out=new Set();(function walk(o,depth){if(!o||typeof o!=='object'||depth>6)return;for(const[k,v]of Object.entries(o)){if(Array.isArray(v)&&/famil|機種|家族/i.test(k)){v.forEach(x=>{const n=typeof x==='string'?x:(x&&(x.name||x.zh||x.label));if(n&&String(n).trim())out.add(String(n).trim())})}else if(v&&typeof v==='object')walk(v,depth+1)}})(obj,0);return[...out]}
+function findFamilies(obj){const out=new Set();(function walk(o,depth){if(!o||typeof o!=='object'||depth>6)return;for(const[k,v]of Object.entries(o)){if(Array.isArray(v)&&/famil|機種|家族|^models$/i.test(k)){v.forEach(x=>{const n=typeof x==='string'?x:(x&&(x.name||x.zh||x.label));if(n&&String(n).trim())out.add(String(n).trim())})}else if(v&&typeof v==='object')walk(v,depth+1)}})(obj,0);return[...out]}
 
 /* ---------- 導覽 ---------- */
 $('#nav').onclick=e=>{const t=e.target.dataset.t;if(!t)return;if(t==='new')newCase();else go(t)};
@@ -231,7 +298,7 @@ function render(){
   $('#ver').textContent=VER;
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===ST.tab||(b.dataset.t==='new'&&ST.tab==='edit'&&ST.isNew)));
   fillLists();
-  const mn=$('#main');mn.oninput=mn.onchange=mn.onclick=null;
+  const mn=$('#main');mn.oninput=mn.onchange=mn.onclick=mn.onpaste=mn.ondrop=mn.ondragover=null;
   ({dash:rDash,list:rList,edit:rEdit,rpt:rRpt,set:rSet})[ST.tab]($('#main'))
 }
 
@@ -299,7 +366,7 @@ function rDash(el){
 }
 function caseTable(arr,compact){
   return`<div class="wrapT"><table class="tbl"><thead><tr><th>案號</th><th>受理時間</th><th>急迫</th><th>狀態</th><th>客戶／廠區</th><th>機種／型號</th><th>問題描述</th><th>負責人</th><th>首次回應</th><th>對策</th><th>天數</th></tr></thead><tbody>${arr.map(c=>`
-  <tr class="click ${overdue(c)?'od':''}" data-id="${c.id}"><td><b>${esc(c.no)}</b></td><td>${esc(fDT(c.receivedAt))}</td><td>${sevB(c.severity)}</td><td>${chip(c.status)}</td><td>${esc(c.customer)}${c.site?'<br><span class="hint">'+esc(c.site)+'</span>':''}</td><td>${esc(c.family)}${c.model?'<br><span class="hint">'+esc(c.model)+'</span>':''}</td><td>${esc(trunc(c.desc,compact?30:45))}</td><td>${esc(c.owner)}</td><td>${stateTag(respState(c),dueResp(c))}</td><td>${stateTag(actState(c),dueAct(c))}</td><td>${r1(ageDays(c))}</td></tr>`).join('')}</tbody></table></div>`
+  <tr class="click ${overdue(c)?'od':''}" data-id="${c.id}"><td><b>${esc(c.no)}</b></td><td>${esc(fDT(c.receivedAt))}</td><td>${sevB(c.severity)}</td><td>${chip(c.status)}</td><td>${esc(c.customer)}${c.site?'<br><span class="hint">'+esc(c.site)+'</span>':''}</td><td>${esc(c.family)}${c.model?'<br><span class="hint">'+esc(c.model)+'</span>':''}</td><td>${esc(trunc(c.desc,compact?30:45))}${(c.photos||[]).length?` <span class="hint">📷${c.photos.length}</span>`:''}</td><td>${esc(c.owner)}</td><td>${stateTag(respState(c),dueResp(c))}</td><td>${stateTag(actState(c),dueAct(c))}</td><td>${r1(ageDays(c))}</td></tr>`).join('')}</tbody></table></div>`
 }
 
 /* ---------- 案件清單 ---------- */
@@ -315,7 +382,7 @@ function rList(el){
     <label class="fld"><span>狀態</span><select data-ff="status"><option value="">全部</option><option value="open">未結案</option><option value="od">逾期</option>${STATUS.map(s=>`<option value="${s.k}">${s.zh}</option>`).join('')}</select></label>
     <label class="fld"><span>急迫度</span><select data-ff="sev">${opt(m.severities.map(s=>s.code),f.sev)}</select></label>
     <label class="fld"><span>客戶</span><select data-ff="cust">${opt(uniq('customer'),f.cust)}</select></label>
-    <label class="fld"><span>機種家族</span><select data-ff="fam">${opt(uniq('family'),f.fam)}</select></label>
+    <label class="fld"><span>機種（與報工系統相同）</span><select data-ff="fam">${opt(uniq('family'),f.fam)}</select></label>
     <label class="fld"><span>負責人</span><select data-ff="owner">${opt(uniq('owner'),f.owner)}</select></label>
     <label class="fld"><span>受理日 起</span><input type="date" data-ff="from" value="${f.from}"></label>
     <label class="fld"><span>受理日 迄</span><input type="date" data-ff="to" value="${f.to}"></label>
@@ -375,8 +442,8 @@ function rEdit(el){
       ${F.inp('site','廠區',{list:'dlSite'})}
       ${F.inp('contact','客戶聯絡人')}
       ${F.inp('contactInfo','聯絡方式',{ph:'電話／Mail'})}
-      ${F.sel('family','機種家族',sl(m.families))}
-      ${F.inp('model','型號')}
+      <div class="fld full"><span>機種（點選，再點一次取消）</span><div class="chips" id="famChips">${famChips()}</div></div>
+      ${F.inp('model','型號',{list:'dlModel',ph:'直接輸入；選了機種會提示用過的型號'})}
       ${F.inp('serial','序號')}
       ${F.inp('woNo','報工工單號',{ph:'選填，連結報工系統'})}
       ${F.sel('severity','急迫度',m.severities.map(s=>({v:s.code,t:`${s.code} ${s.zh}`})),{req:1})}
@@ -385,6 +452,9 @@ function rEdit(el){
       ${F.ta('desc','問題描述（客戶反映內容）',{req:1,r:4})}
       ${F.ta('attach','附件／連結（每行一筆：SharePoint 路徑、Mail 主旨、照片位置…）',{r:2})}
       <div class="fld full links" id="linkBox"></div>
+      <div class="fld full"><span>照片（自動壓縮，存在資料夾的 photos 子資料夾）</span>
+        <div class="phwrap" id="phDrop"><div class="photos" id="phBox"></div>
+        <div style="margin-top:8px"><label class="btn" for="phIn">📷 上傳照片</label><input type="file" id="phIn" accept="image/*" multiple hidden> <span class="hint">可多選；也可拖曳圖檔或 Ctrl+V 貼上截圖</span></div></div></div>
     </div>
   </div>
 
@@ -438,19 +508,28 @@ function rEdit(el){
     </div>
     <div class="tl" id="tlBox"></div>
   </div>`;
-  fillSites(c.customer);updDue();updLinks();drawTL();
+  fillSites(c.customer);fillModels();updDue();updLinks();drawTL();drawPhotos();
+  $('#phIn').onchange=e=>{addPhotos(e.target.files);e.target.value=''};
+  el.onpaste=e=>{const fs=[...(e.clipboardData||{}).items||[]].filter(i=>i.kind==='file').map(i=>i.getAsFile());if(fs.length){e.preventDefault();addPhotos(fs)}};
+  el.ondragover=e=>{if([...e.dataTransfer.types].includes('Files')){e.preventDefault();$('#phDrop').classList.add('over')}};
+  el.ondrop=e=>{if(e.dataTransfer.files.length){e.preventDefault();$('#phDrop').classList.remove('over');addPhotos(e.dataTransfer.files)}};
   el.oninput=el.onchange=e=>{const t=e.target,p=t.dataset.f;if(!p)return;sv(p,t.type==='checkbox'?t.checked:t.value);markDirty();
     if(p==='customer')fillSites(t.value);if(p==='receivedAt'||p==='severity'||p==='firstRespAt'||p==='measureAt')updDue();if(p==='attach')updLinks();if(p==='d8.on')$('#d8body').style.display=t.checked?'block':'none'};
   el.onclick=e=>{const t=e.target;
     if(t.dataset.now){const v=t.dataset.now==='closedAt'||t.dataset.now==='receivedAt'||t.dataset.now==='firstRespAt'?nowL():today();sv(t.dataset.now,v);el.querySelector(`[data-f="${t.dataset.now}"]`).value=v;markDirty();updDue()}
     if(t.dataset.st)changeStatus(t.dataset.st);
+    if(t.dataset.fam!==undefined){ST.draft.family=ST.draft.family===t.dataset.fam?'':t.dataset.fam;markDirty();$('#famChips').innerHTML=famChips();fillModels()}
+    if(t.dataset.view)viewPhoto(t.dataset.view);
+    if(t.dataset.phdel){if(confirm('移除這張照片？（儲存後才會刪除檔案）')){ST.draft.photos=ST.draft.photos.filter(p=>p.id!==t.dataset.phdel);markDirty();drawPhotos()}}
     if(t.dataset.tldel){if(confirm('刪除這筆歷程？')){ST.draft.timeline=ST.draft.timeline.filter(x=>x.id!==t.dataset.tldel);markDirty();drawTL()}}
   };
   $('#eBack').onclick=()=>go('list');$('#eSave').onclick=()=>saveCase();
-  if($('#eDel'))$('#eDel').onclick=()=>{if(!confirm(`確定刪除案件 ${c.no}？此動作無法復原。`))return;DB.cases=DB.cases.filter(x=>x.id!==c.id);persist();ST.dirty=false;toast('已刪除');go('list')};
+  if($('#eDel'))$('#eDel').onclick=()=>{if(!confirm(`確定刪除案件 ${c.no}？此動作無法復原。`))return;const gone=DB.cases.find(x=>x.id===c.id);if(gone)removePhotoFiles((gone.photos||[]).map(p=>p.f));DB.cases=DB.cases.filter(x=>x.id!==c.id);persist();ST.dirty=false;toast('已刪除');go('list')};
   $('#tlAdd').onclick=()=>{const text=$('#tlText').value.trim();if(!text){toast('請輸入歷程內容',true);return}
     ST.draft.timeline.push({id:uid(),at:$('#tlAt').value||nowL(),by:$('#tlBy').value.trim(),type:$('#tlType').value,text});$('#tlText').value='';markDirty();drawTL()};
 }
+function famChips(){const m=DB.master.families,v=ST.draft.family;return m.map(x=>`<button type="button" class="fchip ${x===v?'on':''}" data-fam="${esc(x)}">${esc(x)}</button>`).join('')+(v&&!m.includes(v)?`<button type="button" class="fchip on" data-fam="${esc(v)}">${esc(v)}（已不在主檔）</button>`:'')}
+function fillModels(){const fam=ST.draft.family;const set=new Set(DB.cases.filter(c=>!fam||c.family===fam).map(c=>c.model).filter(Boolean));$('#dlModel').innerHTML=[...set].sort().map(x=>`<option value="${esc(x)}">`).join('')}
 function markDirty(){ST.dirty=true;const h=$('#dirtyH');if(h)h.textContent='● 未儲存'}
 function updDue(){const c=ST.draft,b=$('#dueBox');if(!b)return;const s=sevOf(c.severity),dr=dueResp(c),da=dueAct(c);
   b.innerHTML=`首次回應：<b>${fmtDue(dr)}</b> ${stateTag(respState(c),dr)}<br>對策提出：<b>${da?fD(toLocal(da)):'—'}</b> ${stateTag(actState(c),da)} <span class="hint">（${s.code} 級：回應 ${s.respVal}${s.respUnit==='h'?' 小時':' 個工作天'}／對策 ${s.actDays} 個工作天）</span>`}
@@ -465,7 +544,9 @@ function saveCase(silent){
   const ts=new Date().toISOString();
   if(ST.isNew||!c.no){c.no=genNo(c);c.createdAt=ts}
   c.updatedAt=ts;
-  const i=DB.cases.findIndex(x=>x.id===c.id);if(i>=0)DB.cases[i]=structuredClone(c);else DB.cases.push(structuredClone(c));
+  const i=DB.cases.findIndex(x=>x.id===c.id);
+  if(i>=0){const keep=new Set((c.photos||[]).map(p=>p.f));removePhotoFiles((DB.cases[i].photos||[]).map(p=>p.f).filter(f=>!keep.has(f)))}
+  if(i>=0)DB.cases[i]=structuredClone(c);else DB.cases.push(structuredClone(c));
   persist();ST.isNew=false;ST.dirty=false;if(!silent)toast('已儲存 '+c.no);render();return true
 }
 function changeStatus(to){
@@ -532,7 +613,7 @@ function rSet(el){
     <div class="grid">
       <label class="fld w2"><span>客戶（格式：客戶名稱 | 廠區1,廠區2）</span><textarea id="mCust" rows="7">${esc(m.customers.map(c=>c.sites?`${c.name} | ${c.sites}`:c.name).join('\n'))}</textarea></label>
       <label class="fld"><span>人員（受理人／負責人）</span><textarea id="mPeople" rows="7">${esc(m.people.join('\n'))}</textarea></label>
-      <label class="fld"><span>機種家族</span><textarea id="mFam" rows="7">${esc(m.families.join('\n'))}</textarea><button class="btn sm" id="famImp" type="button" style="margin-top:4px">從報工 JSON 匯入機種家族</button></label>
+      <label class="fld"><span>機種家族</span><textarea id="mFam" rows="7">${esc(m.families.join('\n'))}</textarea><button class="btn sm" id="famImp" type="button" style="margin-top:4px">從報工 JSON 匯入機種</button></label>
       <label class="fld w2"><span>問題分類（中文 | English）</span><textarea id="mCat" rows="8">${esc(pair(m.categories))}</textarea></label>
       <label class="fld"><span>來源管道（中文 | English）</span><textarea id="mSrc" rows="8">${esc(pair(m.sources))}</textarea></label>
       <label class="fld"><span>費用歸屬（中文 | English）</span><textarea id="mCost" rows="8">${esc(pair(m.costTypes))}</textarea></label>
@@ -547,7 +628,7 @@ function rSet(el){
       <button class="btn" id="dExp">匯出 JSON 備份</button><button class="btn" id="dImp">匯入 JSON（取代全部）</button>
       <button class="btn" id="dSample">載入範例資料</button><button class="btn danger" id="dClr">清除全部案件</button>
     </div>
-    <p class="hint" style="margin-top:10px">共享方式：在 SharePoint 同步到本機的資料夾內「建立新資料檔」，之後每台電腦開啟本 HTML 時點「開啟資料檔」選同一個 JSON 即可；每次存檔會自動寫回，寫入前會檢查是否有他人較新的變更。<br>目前：${DB.cases.length} 件案件，最後更新 ${DB.updatedAt?new Date(DB.updatedAt).toLocaleString('zh-TW',{hour12:false}):'—'}，資料版本 schema ${SCHEMA}，程式 ${VER}。</p>
+    <p class="hint" style="margin-top:10px">共享方式：按右上角「連結資料夾」，選 SharePoint 同步到本機的資料夾。系統會在裡面建立「客戶問題點資料.json」和 photos 子資料夾；每次存檔自動寫回，寫入前會檢查是否有他人較新的變更。JSON 備份不含照片，照片請以 photos 資料夾為準。<br>目前：${DB.cases.length} 件案件，最後更新 ${DB.updatedAt?new Date(DB.updatedAt).toLocaleString('zh-TW',{hour12:false}):'—'}，資料版本 schema ${SCHEMA}，程式 ${VER}。</p>
   </div>`;
   const lines=id=>$('#'+id).value.split('\n').map(s=>s.trim()).filter(Boolean);
   const pairs=id=>lines(id).map(l=>{const[zh,en]=l.split('|').map(s=>s.trim());return{zh,en:en||''}}).filter(x=>x.zh);
@@ -574,19 +655,19 @@ function loadSample(){
   ['Coos','Addy','鄧先生','工程師A','工程師B'].forEach(p=>{if(!m.people.includes(p))m.people.push(p)});
   const b=new Date(),dt=(off,h,mi=0)=>{const d=new Date(b);d.setDate(d.getDate()-off);d.setHours(h,mi,0,0);return toLocal(d)};
   const L=[
-    {receivedAt:dt(45,9),source:'Mail',receiver:'Coos',customer:'範例客戶甲',site:'竹科一廠',contact:'王課長',family:'乾式螺旋泵',model:'DS-200',serial:'SN10021',severity:'A',owner:'工程師A',desc:'機台運轉中跳機，控制器顯示馬達過載告警，產線停機。',firstRespAt:dt(45,10,30),category:'停機/無法啟動',handle:'更換/借機',measureAt:dt(44,9).slice(0,10),phenomenon:'到場量測馬達電流偏高 18%，軸承有異音。',containment:'先提供借機，當日恢復生產。',result:'回廠更換軸承後測試 72 小時正常，已裝回。',custReply:'客戶確認運轉正常。',custConfirmAt:dt(38,10).slice(0,10),status:'closed',closedAt:dt(37,16),costType:'保固',rootCause:'軸承潤滑劣化，保養週期過長。',permanent:'同型機保養週期由 12 個月調整為 6 個月。'},
-    {receivedAt:dt(30,14),source:'電話',receiver:'Coos',customer:'範例客戶乙',site:'中科廠',family:'羅茨泵',model:'RB-500',serial:'SN20877',severity:'B',owner:'工程師B',desc:'抽速不足，製程腔體抽到底壓時間變長約 2 分鐘。',firstRespAt:dt(29,9),category:'抽速不足/真空度異常',handle:'派工到場',measureAt:dt(27,9).slice(0,10),phenomenon:'前級管路有洩漏。',containment:'更換管路墊片。',result:'洩漏排除，抽氣時間恢復。',status:'closed',closedAt:dt(24,17),costType:'合約內',rootCause:'墊片老化。',permanent:'加入年度保養檢查項目。'},
-    {receivedAt:dt(6,11),source:'業務轉達',receiver:'Addy',customer:'範例客戶丙',site:'南科廠',family:'渦輪分子泵',model:'TM-700',serial:'SN30112',severity:'B',owner:'工程師A',desc:'客戶反映維修後一週又出現異音。',firstRespAt:dt(5,15),category:'維修品質',handle:'回廠維修',phenomenon:'客戶提供錄音，高頻異音。',containment:'安排回廠檢測。',status:'wip'},
-    {receivedAt:dt(2,8,40),source:'電話',receiver:'Coos',customer:'範例客戶甲',site:'竹科二廠',family:'乾式螺旋泵',model:'DS-300',serial:'SN10388',severity:'A',owner:'工程師B',desc:'冷卻水溫度告警，機台自動降載。',category:'過熱',status:'new'},
-    {receivedAt:dt(1,16),source:'Mail',receiver:'Addy',customer:'範例客戶乙',site:'中科廠',family:'油封式旋片泵',model:'RV-40',severity:'C',owner:'Coos',desc:'報價單金額與合約價不一致，請確認。',firstRespAt:dt(0,9),category:'報價/帳務',handle:'遠端/電話處理',result:'已重新開立報價單寄出。',status:'confirm'}
+    {receivedAt:dt(45,9),source:'Mail',receiver:'Coos',customer:'範例客戶甲',site:'竹科一廠',contact:'王課長',family:'COBRA',model:'DS-200',serial:'SN10021',severity:'A',owner:'工程師A',desc:'機台運轉中跳機，控制器顯示馬達過載告警，產線停機。',firstRespAt:dt(45,10,30),category:'停機/無法啟動',handle:'更換/借機',measureAt:dt(44,9).slice(0,10),phenomenon:'到場量測馬達電流偏高 18%，軸承有異音。',containment:'先提供借機，當日恢復生產。',result:'回廠更換軸承後測試 72 小時正常，已裝回。',custReply:'客戶確認運轉正常。',custConfirmAt:dt(38,10).slice(0,10),status:'closed',closedAt:dt(37,16),costType:'保固',rootCause:'軸承潤滑劣化，保養週期過長。',permanent:'同型機保養週期由 12 個月調整為 6 個月。'},
+    {receivedAt:dt(30,14),source:'電話',receiver:'Coos',customer:'範例客戶乙',site:'中科廠',family:'Puma',model:'RB-500',serial:'SN20877',severity:'B',owner:'工程師B',desc:'抽速不足，製程腔體抽到底壓時間變長約 2 分鐘。',firstRespAt:dt(29,9),category:'抽速不足/真空度異常',handle:'派工到場',measureAt:dt(27,9).slice(0,10),phenomenon:'前級管路有洩漏。',containment:'更換管路墊片。',result:'洩漏排除，抽氣時間恢復。',status:'closed',closedAt:dt(24,17),costType:'合約內',rootCause:'墊片老化。',permanent:'加入年度保養檢查項目。'},
+    {receivedAt:dt(6,11),source:'業務轉達',receiver:'Addy',customer:'範例客戶丙',site:'南科廠',family:'Seco',model:'TM-700',serial:'SN30112',severity:'B',owner:'工程師A',desc:'客戶反映維修後一週又出現異音。',firstRespAt:dt(5,15),category:'維修品質',handle:'回廠維修',phenomenon:'客戶提供錄音，高頻異音。',containment:'安排回廠檢測。',status:'wip'},
+    {receivedAt:dt(2,8,40),source:'電話',receiver:'Coos',customer:'範例客戶甲',site:'竹科二廠',family:'COBRA',model:'DS-300',serial:'SN10388',severity:'A',owner:'工程師B',desc:'冷卻水溫度告警，機台自動降載。',category:'過熱',status:'new'},
+    {receivedAt:dt(1,16),source:'Mail',receiver:'Addy',customer:'範例客戶乙',site:'中科廠',family:'R5',model:'RV-40',severity:'C',owner:'Coos',desc:'報價單金額與合約價不一致，請確認。',firstRespAt:dt(0,9),category:'報價/帳務',handle:'遠端/電話處理',result:'已重新開立報價單寄出。',status:'confirm'}
   ];
-  L.sort((a,c)=>a.receivedAt.localeCompare(c.receivedAt)).forEach(o=>{const c=Object.assign(blankCase(),o);c.no=genNo(c);c.createdAt=c.updatedAt=new Date().toISOString();c.timeline.push({id:uid(),at:c.receivedAt,by:c.receiver,type:c.source==='電話'?'電話':'Mail',text:'受理客戶反映（範例）'});DB.cases.push(c)});
+  L.sort((a,c)=>a.receivedAt.localeCompare(c.receivedAt)).forEach(o=>{const c=Object.assign(blankCase(),o);c.no=genNo(c);c.createdAt=c.updatedAt=new Date().toISOString();c.photos=[];c.timeline.push({id:uid(),at:c.receivedAt,by:c.receiver,type:c.source==='電話'?'電話':'Mail',text:'受理客戶反映（範例）'});DB.cases.push(c)});
 }
 
 /* ---------- 啟動 ---------- */
 (async function init(){
   render();updFile();
-  if(FSA){const h=await idbGet('fh');if(h){FH=h;if(await ensurePerm(false))await loadFromFile(false);updFile()}}
+  if(FSA){const h=await idbGet('dh');if(h){DH=h;if(await ensurePerm(false))await loadFromFile(false);updFile()}}
 })();
 </script>
 </body>
