@@ -77,6 +77,16 @@ header .btn.pri{background:var(--acc);border-color:var(--acc)}
 .tl .meta{font-size:12px;color:var(--sub)}
 .tl .txt{white-space:pre-wrap}
 .links a{display:block;font-size:12px;color:var(--acc);word-break:break-all}
+.dtw{display:flex;gap:4px;align-items:center;position:relative}
+.dtw input.dtd{flex:1.3;min-width:0}.dtw input.dtt{flex:1;min-width:0}
+.dtw.bad input{border-color:var(--bad)}
+.dtcal{border:1px solid var(--line);background:#fff;border-radius:6px;padding:5px 6px;cursor:pointer;font-size:13px}
+.dtnat{position:absolute;left:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0}
+.dtq{display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:3px;min-height:22px}
+.dtq button{border:1px solid var(--line);background:#f7f9fb;border-radius:12px;padding:1px 9px;font:inherit;font-size:12px;cursor:pointer;color:var(--sub)}
+.dtq button:hover{border-color:var(--acc);color:var(--acc)}
+.dtgood{color:var(--ok);font-weight:700;font-size:12.5px}.dtbad{color:var(--bad);font-weight:600;font-size:12px}
+input.invalid{border-color:var(--bad)!important;background:#fff6f6!important}
 .chips{display:flex;flex-wrap:wrap;gap:6px;padding-top:2px}
 .fchip{border:1.5px solid var(--line);background:#fff;border-radius:18px;padding:5px 13px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink)}
 .fchip:hover{border-color:var(--acc)}.fchip.on{background:var(--acc);border-color:var(--acc);color:#fff}
@@ -120,10 +130,10 @@ header .btn.pri{background:var(--acc);border-color:var(--acc)}
 <main id="main"></main>
 <input type="file" id="fileIn" accept=".json,application/json" hidden>
 <div class="toast" id="toast"></div>
-<datalist id="dlPeople"></datalist><datalist id="dlCust"></datalist><datalist id="dlSite"></datalist><datalist id="dlModel"></datalist>
+<datalist id="dlPeople"></datalist><datalist id="dlCust"></datalist><datalist id="dlSite"></datalist><datalist id="dlModel"></datalist><datalist id="dlContact"></datalist>
 <script>
 'use strict';
-const VER='V1.10', SCHEMA=1, LS='CQ_DB';
+const VER='V1.20', SCHEMA=1, LS='CQ_DB';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -152,11 +162,11 @@ function defMaster(){return{
 }}
 function blankDB(){return{schemaVer:SCHEMA,app:'CQ',updatedAt:'',master:defMaster(),cases:[]}}
 const OLDFAM='乾式螺旋泵|羅茨泵|渦輪分子泵|油封式旋片泵|爪式泵|檢漏儀|其他';
-function migrate(d){d.master=Object.assign(defMaster(),d.master||{});if((d.master.families||[]).join('|')===OLDFAM)d.master.families=defMaster().families;d.cases=d.cases||[];d.cases.forEach(c=>{c.timeline=c.timeline||[];c.d8=c.d8||{on:false};c.photos=c.photos||[]});d.schemaVer=SCHEMA;return d}
+function migrate(d){d.master=Object.assign(defMaster(),d.master||{});if((d.master.families||[]).join('|')===OLDFAM)d.master.families=defMaster().families;d.cases=d.cases||[];d.cases.forEach(c=>{c.timeline=c.timeline||[];c.d8=c.d8||{on:false};c.photos=c.photos||[];if(c.contactInfo&&!(c.mobile||c.tel||c.email)){const v=c.contactInfo;if(/@/.test(v))c.email=v;else if(/^09/.test(v.replace(/\D/g,'')))c.mobile=v;else c.tel=v}delete c.contactInfo});d.schemaVer=SCHEMA;return d}
 let DB=null;try{DB=JSON.parse(localStorage.getItem(LS))}catch(e){}
 if(!DB||DB.app!=='CQ')DB=blankDB();migrate(DB);
 
-function blankCase(){const m=DB.master;return{id:uid(),no:'',status:'new',receivedAt:nowL(),source:(m.sources[0]||{}).zh||'',receiver:'',customer:'',site:'',contact:'',contactInfo:'',family:'',model:'',serial:'',woNo:'',severity:'B',owner:'',desc:'',attach:'',firstRespAt:'',category:'',handle:'',measureAt:'',phenomenon:'',containment:'',result:'',custConfirmAt:'',custReply:'',closedAt:'',costType:'',rootCause:'',permanent:'',d8:{on:false},timeline:[],photos:[],createdAt:'',updatedAt:''}}
+function blankCase(){const m=DB.master;return{id:uid(),no:'',status:'new',receivedAt:nowL(),source:(m.sources[0]||{}).zh||'',receiver:'',customer:'',site:'',contact:'',contactDept:'',contactTitle:'',mobile:'',tel:'',ext:'',email:'',family:'',model:'',serial:'',woNo:'',severity:'B',owner:'',desc:'',attach:'',firstRespAt:'',category:'',handle:'',measureAt:'',phenomenon:'',containment:'',result:'',custConfirmAt:'',custReply:'',closedAt:'',costType:'',rootCause:'',permanent:'',d8:{on:false},timeline:[],photos:[],createdAt:'',updatedAt:''}}
 
 /* ---------- 時效 ---------- */
 function addWD(d,n){const r=new Date(d);let k=0;while(k<n){r.setDate(r.getDate()+1);const w=r.getDay();if(w!==0&&w!==6)k++}return r}
@@ -293,7 +303,31 @@ function newCase(){if(!leaveOK())return;ST.draft=blankCase();ST.isNew=true;ST.di
 function openCase(id){const c=DB.cases.find(x=>x.id===id);if(!c||!leaveOK())return;ST.draft=structuredClone(c);ST.isNew=false;ST.dirty=false;ST.tab='edit';render();window.scrollTo(0,0)}
 window.addEventListener('beforeunload',e=>{if(ST.tab==='edit'&&ST.dirty){e.preventDefault();e.returnValue=''}});
 function fillLists(){const m=DB.master;$('#dlPeople').innerHTML=m.people.map(p=>`<option value="${esc(p)}">`).join('');$('#dlCust').innerHTML=m.customers.map(c=>`<option value="${esc(c.name)}">`).join('')}
-function fillSites(cust){const c=DB.master.customers.find(x=>x.name===cust);$('#dlSite').innerHTML=(c?String(c.sites||'').split(/[,，、]/).map(s=>s.trim()).filter(Boolean):[]).map(s=>`<option value="${esc(s)}">`).join('')}
+const CITY=['基隆市','臺北市','新北市','桃園市','新竹市','新竹縣','苗栗縣','臺中市','彰化縣','南投縣','雲林縣','嘉義市','嘉義縣','臺南市','高雄市','屏東縣','宜蘭縣','花蓮縣','臺東縣','澎湖縣','金門縣','連江縣','海外'];
+const custCities=cust=>{const c=DB.master.customers.find(x=>x.name===cust);return c?String(c.sites||'').split(/[,，、\s]+/).map(s=>s.trim().replace(/^台/,'臺')).filter(Boolean):[]};
+function fillSites(cust){const sel=document.querySelector('[data-f="site"]');if(!sel)return;const v=ST.draft.site||'',mine=custCities(cust),rest=CITY.filter(x=>!mine.includes(x));
+  sel.innerHTML='<option value="">—</option>'+(mine.length?`<optgroup label="此客戶常用">${mine.map(x=>`<option>${esc(x)}</option>`).join('')}</optgroup><optgroup label="全部縣市">`:'')+rest.map(x=>`<option>${esc(x)}</option>`).join('')+(mine.length?'</optgroup>':'')+(v&&!CITY.includes(v)&&!mine.includes(v)?`<option>${esc(v)}</option>`:'');
+  sel.value=v;if(!v&&mine.length===1){sel.value=mine[0];ST.draft.site=mine[0]}}
+function fillContacts(cust){const set=new Set(DB.cases.filter(c=>c.customer===cust&&c.contact).map(c=>c.contact));$('#dlContact').innerHTML=[...set].map(x=>`<option value="${esc(x)}">`).join('')}
+function autofillContact(){const d=ST.draft;if(!d.contact)return;const prev=[...DB.cases].filter(c=>c.id!==d.id&&c.customer===d.customer&&c.contact===d.contact).sort((a,b)=>String(b.receivedAt).localeCompare(a.receivedAt))[0];if(!prev)return;
+  let n=0;['contactDept','contactTitle','mobile','tel','ext','email'].forEach(k=>{if(!d[k]&&prev[k]){d[k]=prev[k];const i=document.querySelector(`[data-f="${k}"]`);if(i)i.value=prev[k];n++}});if(n)toast('已帶入上次的聯絡資料')}
+function fmtMobile(v){const x=String(v).replace(/\D/g,'');return /^09\d{8}$/.test(x)?`${x.slice(0,4)}-${x.slice(4,7)}-${x.slice(7)}`:v}
+const okEmail=v=>!v||/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+
+/* ---------- 日期時間輸入 ---------- */
+function parseD(s){s=String(s).trim().replace(/[年月\.\-．]/g,'/').replace(/日/g,'');if(!s)return'';let y,m,d;
+  if(/^\d{8}$/.test(s)){y=+s.slice(0,4);m=+s.slice(4,6);d=+s.slice(6)}
+  else if(/^\d{3,4}$/.test(s)){m=+s.slice(0,-2);d=+s.slice(-2)}
+  else if(/^\d{1,2}$/.test(s)){m=new Date().getMonth()+1;d=+s}
+  else{const p=s.split('/').filter(Boolean).map(Number);if(p.length===3){[y,m,d]=p;if(y<100)y+=2000;else if(y<300)y+=1911}else if(p.length===2)[m,d]=p;else return null}
+  if(!y){const t=new Date();y=t.getFullYear();if(new Date(y,m-1,d)-t>45*864e5)y--}
+  const x=new Date(y,m-1,d);if(isNaN(x)||x.getMonth()!==m-1||x.getDate()!==d)return null;return`${y}-${pad(m)}-${pad(d)}`}
+function parseT(s){s=String(s).trim().replace(/：/g,':');if(!s)return'';const pm=/下午|晚上|pm/i.test(s);s=s.replace(/上午|下午|早上|晚上|am|pm|\s|點/ig,m=>m==='點'?':':'').replace(/:$/,'');let h,mi;
+  if(/^\d{1,2}$/.test(s)){h=+s;mi=0}else if(/^\d{3,4}$/.test(s)){h=+s.slice(0,-2);mi=+s.slice(-2)}else{const p=s.split(':');if(p.length!==2)return null;h=+p[0];mi=+(p[1]||0)}
+  if(pm&&h<12)h+=12;if(isNaN(h)||isNaN(mi)||h>23||mi>59)return null;return pad(h)+':'+pad(mi)}
+const WK='日一二三四五六';
+function nice(v){const d=P(v);if(!d)return'';return`${pad(d.getMonth()+1)}/${pad(d.getDate())}（${WK[d.getDay()]}）${v.length>10?' '+v.slice(11,16):''}`}
+
 function render(){
   $('#ver').textContent=VER;
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===ST.tab||(b.dataset.t==='new'&&ST.tab==='edit'&&ST.isNew)));
@@ -365,7 +399,7 @@ function rDash(el){
   el.querySelectorAll('tr[data-id]').forEach(tr=>tr.onclick=()=>openCase(tr.dataset.id));
 }
 function caseTable(arr,compact){
-  return`<div class="wrapT"><table class="tbl"><thead><tr><th>案號</th><th>受理時間</th><th>急迫</th><th>狀態</th><th>客戶／廠區</th><th>機種／型號</th><th>問題描述</th><th>負責人</th><th>首次回應</th><th>對策</th><th>天數</th></tr></thead><tbody>${arr.map(c=>`
+  return`<div class="wrapT"><table class="tbl"><thead><tr><th>案號</th><th>受理時間</th><th>急迫</th><th>狀態</th><th>客戶／縣市</th><th>機種／型號</th><th>問題描述</th><th>負責人</th><th>首次回應</th><th>對策</th><th>天數</th></tr></thead><tbody>${arr.map(c=>`
   <tr class="click ${overdue(c)?'od':''}" data-id="${c.id}"><td><b>${esc(c.no)}</b></td><td>${esc(fDT(c.receivedAt))}</td><td>${sevB(c.severity)}</td><td>${chip(c.status)}</td><td>${esc(c.customer)}${c.site?'<br><span class="hint">'+esc(c.site)+'</span>':''}</td><td>${esc(c.family)}${c.model?'<br><span class="hint">'+esc(c.model)+'</span>':''}</td><td>${esc(trunc(c.desc,compact?30:45))}${(c.photos||[]).length?` <span class="hint">📷${c.photos.length}</span>`:''}</td><td>${esc(c.owner)}</td><td>${stateTag(respState(c),dueResp(c))}</td><td>${stateTag(actState(c),dueAct(c))}</td><td>${r1(ageDays(c))}</td></tr>`).join('')}</tbody></table></div>`
 }
 
@@ -374,7 +408,7 @@ function filtered(){const f=ST.f,q=f.q.trim().toLowerCase();return DB.cases.filt
   if(f.status==='open'&&!isOpen(c))return false;if(f.status==='od'&&!overdue(c))return false;if(f.status&&!['open','od'].includes(f.status)&&c.status!==f.status)return false;
   if(f.sev&&c.severity!==f.sev)return false;if(f.cust&&c.customer!==f.cust)return false;if(f.fam&&c.family!==f.fam)return false;if(f.owner&&c.owner!==f.owner)return false;
   const d=fD(c.receivedAt);if(f.from&&d<f.from)return false;if(f.to&&d>f.to)return false;
-  if(q&&!['no','customer','site','model','serial','desc','woNo','contact','owner','category'].some(k=>String(c[k]||'').toLowerCase().includes(q)))return false;return true}).sort((a,b)=>String(b.receivedAt).localeCompare(a.receivedAt))}
+  if(q&&!['no','customer','site','model','serial','desc','woNo','contact','contactDept','mobile','tel','email','owner','category'].some(k=>String(c[k]||'').toLowerCase().includes(q)))return false;return true}).sort((a,b)=>String(b.receivedAt).localeCompare(a.receivedAt))}
 function rList(el){
   const f=ST.f,m=DB.master,uniq=k=>[...new Set(DB.cases.map(c=>c[k]).filter(Boolean))].sort();
   const opt=(arr,v)=>`<option value="">全部</option>`+arr.map(x=>`<option ${x===v?'selected':''} value="${esc(x)}">${esc(x)}</option>`).join('');
@@ -396,22 +430,26 @@ function rList(el){
   $('#csv').onclick=()=>exportCSV(filtered());draw()
 }
 function exportCSV(arr){
-  const cols=[['no','案號'],['status','狀態'],['receivedAt','受理時間'],['source','來源'],['receiver','受理人'],['customer','客戶'],['site','廠區'],['contact','聯絡人'],['family','機種家族'],['model','型號'],['serial','序號'],['woNo','報工工單號'],['severity','急迫度'],['owner','負責人'],['desc','問題描述'],['firstRespAt','首次回應'],['category','問題分類'],['handle','處置方式'],['measureAt','對策提出日'],['phenomenon','現象確認'],['containment','暫時對策'],['result','處置結果'],['custConfirmAt','客戶確認日'],['closedAt','結案時間'],['costType','費用歸屬'],['rootCause','根本原因'],['permanent','永久對策']];
+  const cols=[['no','案號'],['status','狀態'],['receivedAt','受理時間'],['source','來源'],['receiver','受理人'],['customer','客戶'],['site','縣市'],['contact','聯絡人'],['contactDept','單位'],['contactTitle','職位'],['mobile','手機'],['tel','市話'],['ext','分機'],['email','Email'],['family','機種家族'],['model','型號'],['serial','序號'],['woNo','報工工單號'],['severity','急迫度'],['owner','負責人'],['desc','問題描述'],['firstRespAt','首次回應'],['category','問題分類'],['handle','處置方式'],['measureAt','對策提出日'],['phenomenon','現象確認'],['containment','暫時對策'],['result','處置結果'],['custConfirmAt','客戶確認日'],['closedAt','結案時間'],['costType','費用歸屬'],['rootCause','根本原因'],['permanent','永久對策']];
   const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
   const rows=[cols.map(c=>c[1]).concat(['回應時效','對策時效','天數']).map(q).join(',')].concat(arr.map(c=>cols.map(([k])=>k==='status'?stOf(c.status).zh:c[k]).concat([respState(c),actState(c),r1(ageDays(c))]).map(q).join(',')));
   download(`客戶問題點清單_${today()}.csv`,'\ufeff'+rows.join('\r\n'),'text/csv')
 }
 
 /* ---------- 案件編輯 ---------- */
-const gv=p=>p.split('.').reduce((o,k)=>o?o[k]:undefined,ST.draft)??'';
-function sv(p,v){const ks=p.split('.');let o=ST.draft;ks.slice(0,-1).forEach(k=>{o[k]=o[k]||{};o=o[k]});o[ks[ks.length-1]]=v}
+const gv=p=>p==='_tl'?(ST.tlAt||''):p.split('.').reduce((o,k)=>o?o[k]:undefined,ST.draft)??'';
+function sv(p,v){if(p==='_tl'){ST.tlAt=v;return}const ks=p.split('.');let o=ST.draft;ks.slice(0,-1).forEach(k=>{o[k]=o[k]||{};o=o[k]});o[ks[ks.length-1]]=v}
 const F={
+  dt:(p,l,o={})=>{const v=gv(p),dOnly=!!o.d,d=v?v.slice(0,10).replace(/-/g,'/'):'',t=v&&v.length>10?v.slice(11,16):'';
+    return`<div class="fld ${o.c||''}"><span class="${o.req?'req':''}">${l}</span><div class="dtw" data-dtw="${p}" data-donly="${dOnly?1:''}"><input class="dtd" value="${esc(d)}" placeholder="${dOnly?'例 10/8 或 1008':'日期 10/8'}" data-dtpart="d" autocomplete="off"><button type="button" class="dtcal" data-dtcal="${p}" title="從月曆選">📅</button>${dOnly?'':`<input class="dtt" value="${esc(t)}" placeholder="時間 1430" data-dtpart="t" autocomplete="off">`}<input type="date" class="dtnat" tabindex="-1" data-dtnat="${p}"></div>
+    <div class="dtq"><button type="button" data-dq="now" data-dqp="${p}">${dOnly?'今天':'現在'}</button><button type="button" data-dq="yday" data-dqp="${p}">昨天</button><button type="button" data-dq="clr" data-dqp="${p}">清除</button><span class="dtok" data-dtok="${p}"></span></div></div>`},
   inp:(p,l,o={})=>`<label class="fld ${o.c||''}"><span class="${o.req?'req':''}">${l}</span>${o.now?'<span class="inl">':''}<input type="${o.t||'text'}" data-f="${p}" value="${esc(gv(p))}" ${o.list?`list="${o.list}"`:''} ${o.ro?'readonly':''} placeholder="${esc(o.ph||'')}">${o.now?`<button class="btn sm" data-now="${p}" type="button">現在</button></span>`:''}</label>`,
   sel:(p,l,opts,o={})=>{const v=gv(p);const has=opts.some(x=>x.v===v);return`<label class="fld ${o.c||''}"><span class="${o.req?'req':''}">${l}</span><select data-f="${p}"><option value="">—</option>${opts.map(x=>`<option value="${esc(x.v)}" ${x.v===v?'selected':''}>${esc(x.t)}</option>`).join('')}${v&&!has?`<option selected value="${esc(v)}">${esc(v)}（已不在主檔）</option>`:''}</select></label>`},
   ta:(p,l,o={})=>`<label class="fld ${o.c||'full'}"><span class="${o.req?'req':''}">${l}</span><textarea data-f="${p}" rows="${o.r||3}" placeholder="${esc(o.ph||'')}">${esc(gv(p))}</textarea></label>`
 };
 function rEdit(el){
   const c=ST.draft;if(!c){go('list');return}
+  ST.tlAt=nowL();
   const m=DB.master,zl=a=>a.map(x=>({v:x.zh,t:x.zh})),sl=a=>a.map(x=>({v:x,t:x}));
   const order=['new','wip','confirm','closed'],ci=order.indexOf(c.status);
   const btns=[];
@@ -435,13 +473,17 @@ function rEdit(el){
   <div class="card"><h3><span class="no">1</span>受理資訊</h3>
     <div class="grid">
       ${F.inp('no','案號',{ro:1,ph:'儲存後自動編號'})}
-      ${F.inp('receivedAt','受理時間',{t:'datetime-local',req:1,now:1})}
+      ${F.dt('receivedAt','受理時間',{req:1})}
       ${F.sel('source','來源管道',zl(m.sources),{req:1})}
       ${F.inp('receiver','受理人',{list:'dlPeople'})}
       ${F.inp('customer','客戶',{list:'dlCust',req:1})}
-      ${F.inp('site','廠區',{list:'dlSite'})}
-      ${F.inp('contact','客戶聯絡人')}
-      ${F.inp('contactInfo','聯絡方式',{ph:'電話／Mail'})}
+      <label class="fld"><span>縣市</span><select data-f="site"></select></label>
+      ${F.inp('contact','客戶聯絡人',{list:'dlContact',ph:'輸入用過的姓名會帶出聯絡資料'})}
+      ${F.inp('contactDept','單位',{ph:'例：設備課、廠務部'})}
+      ${F.inp('contactTitle','職位',{ph:'例：課長、工程師'})}
+      ${F.inp('mobile','手機',{t:'tel',ph:'0912-345-678'})}
+      <div class="fld"><span>市話／分機</span><div class="inl"><input type="tel" data-f="tel" value="${esc(gv('tel'))}" placeholder="03-1234567" style="flex:2"><input data-f="ext" value="${esc(gv('ext'))}" placeholder="分機" style="flex:1;min-width:60px"></div></div>
+      ${F.inp('email','Email',{t:'email',ph:'name@company.com'})}
       <div class="fld full"><span>機種（點選，再點一次取消）</span><div class="chips" id="famChips">${famChips()}</div></div>
       ${F.inp('model','型號',{list:'dlModel',ph:'直接輸入；選了機種會提示用過的型號'})}
       ${F.inp('serial','序號')}
@@ -460,10 +502,10 @@ function rEdit(el){
 
   <div class="card"><h3><span class="no">2</span>初步調查</h3>
     <div class="grid">
-      ${F.inp('firstRespAt','首次回應時間',{t:'datetime-local',now:1})}
+      ${F.dt('firstRespAt','首次回應時間')}
       ${F.sel('category','問題分類',zl(m.categories))}
       ${F.sel('handle','處置方式',sl(HANDLE))}
-      ${F.inp('measureAt','對策提出日',{t:'date'})}
+      ${F.dt('measureAt','對策提出日',{d:1})}
       ${F.ta('phenomenon','現象確認（實際狀況、數據、照片說明）',{c:'w2'})}
       ${F.ta('containment','暫時對策／圍堵',{c:'w2'})}
     </div>
@@ -473,13 +515,13 @@ function rEdit(el){
     <div class="grid">
       ${F.ta('result','處置結果',{c:'w2'})}
       ${F.ta('custReply','客戶回覆',{c:'w2'})}
-      ${F.inp('custConfirmAt','客戶確認日',{t:'date'})}
+      ${F.dt('custConfirmAt','客戶確認日',{d:1})}
     </div>
   </div>
 
   <div class="card"><h3><span class="no">4</span>結案</h3>
     <div class="grid">
-      ${F.inp('closedAt','結案時間',{t:'datetime-local',now:1})}
+      ${F.dt('closedAt','結案時間')}
       ${F.sel('costType','費用歸屬',zl(m.costTypes))}
       <div></div><div></div>
       ${F.ta('rootCause','根本原因',{c:'w2'})}
@@ -500,7 +542,7 @@ function rEdit(el){
 
   <div class="card"><h3><span class="no">5</span>處理歷程</h3>
     <div class="grid">
-      <label class="fld"><span>時間</span><input type="datetime-local" id="tlAt" value="${nowL()}"></label>
+      ${F.dt('_tl','時間')}
       <label class="fld"><span>人員</span><input id="tlBy" list="dlPeople" value="${esc(c.owner||'')}"></label>
       <label class="fld"><span>類型</span><select id="tlType">${TLTYPE.map(t=>`<option>${t}</option>`).join('')}</select></label>
       <div class="fld"><span>&nbsp;</span><button class="btn pri" id="tlAdd" type="button">＋ 加入歷程</button></div>
@@ -508,15 +550,25 @@ function rEdit(el){
     </div>
     <div class="tl" id="tlBox"></div>
   </div>`;
-  fillSites(c.customer);fillModels();updDue();updLinks();drawTL();drawPhotos();
+  ST.tlAt=nowL();fillSites(c.customer);fillContacts(c.customer);fillModels();el.querySelectorAll('[data-dtw]').forEach(w=>commitDT(w,true));updDue();updLinks();drawTL();drawPhotos();
   $('#phIn').onchange=e=>{addPhotos(e.target.files);e.target.value=''};
   el.onpaste=e=>{const fs=[...(e.clipboardData||{}).items||[]].filter(i=>i.kind==='file').map(i=>i.getAsFile());if(fs.length){e.preventDefault();addPhotos(fs)}};
   el.ondragover=e=>{if([...e.dataTransfer.types].includes('Files')){e.preventDefault();$('#phDrop').classList.add('over')}};
   el.ondrop=e=>{if(e.dataTransfer.files.length){e.preventDefault();$('#phDrop').classList.remove('over');addPhotos(e.dataTransfer.files)}};
-  el.oninput=el.onchange=e=>{const t=e.target,p=t.dataset.f;if(!p)return;sv(p,t.type==='checkbox'?t.checked:t.value);markDirty();
-    if(p==='customer')fillSites(t.value);if(p==='receivedAt'||p==='severity'||p==='firstRespAt'||p==='measureAt')updDue();if(p==='attach')updLinks();if(p==='d8.on')$('#d8body').style.display=t.checked?'block':'none'};
+  el.oninput=el.onchange=e=>{const t=e.target;
+    if(t.dataset.dtpart){commitDT(t.closest('[data-dtw]'),e.type==='change');return}
+    if(t.dataset.dtnat){const w=t.closest('[data-dtw]');if(t.value){w.querySelector('.dtd').value=t.value.replace(/-/g,'/');commitDT(w,true);const ti=w.querySelector('.dtt');if(ti&&!ti.value)ti.focus()}return}
+    const p=t.dataset.f;if(!p)return;
+    if(e.type==='change'&&p==='mobile'){t.value=fmtMobile(t.value)}
+    if(p==='email')t.classList.toggle('invalid',!okEmail(t.value.trim()));sv(p,t.type==='checkbox'?t.checked:t.value);markDirty();
+    if(p==='customer'){fillSites(t.value);fillContacts(t.value)}if(p==='contact'&&e.type==='change')autofillContact();if(p==='receivedAt'||p==='severity'||p==='firstRespAt'||p==='measureAt')updDue();if(p==='attach')updLinks();if(p==='d8.on')$('#d8body').style.display=t.checked?'block':'none'};
   el.onclick=e=>{const t=e.target;
-    if(t.dataset.now){const v=t.dataset.now==='closedAt'||t.dataset.now==='receivedAt'||t.dataset.now==='firstRespAt'?nowL():today();sv(t.dataset.now,v);el.querySelector(`[data-f="${t.dataset.now}"]`).value=v;markDirty();updDue()}
+    if(t.dataset.dq){const w=el.querySelector(`[data-dtw="${t.dataset.dqp}"]`),di=w.querySelector('.dtd'),ti=w.querySelector('.dtt');
+      if(t.dataset.dq==='now'){di.value=today().replace(/-/g,'/');if(ti)ti.value=nowL().slice(11)}
+      if(t.dataset.dq==='yday'){const y=new Date();y.setDate(y.getDate()-1);di.value=toLocal(y).slice(0,10).replace(/-/g,'/');if(ti&&!ti.value)ti.focus()}
+      if(t.dataset.dq==='clr'){di.value='';if(ti)ti.value=''}
+      commitDT(w,true)}
+    if(t.dataset.dtcal){const n=el.querySelector(`[data-dtnat="${t.dataset.dtcal}"]`);const cur=parseD(n.closest('[data-dtw]').querySelector('.dtd').value);n.value=cur||today();try{n.showPicker()}catch(_){n.focus();n.click()}}
     if(t.dataset.st)changeStatus(t.dataset.st);
     if(t.dataset.fam!==undefined){ST.draft.family=ST.draft.family===t.dataset.fam?'':t.dataset.fam;markDirty();$('#famChips').innerHTML=famChips();fillModels()}
     if(t.dataset.view)viewPhoto(t.dataset.view);
@@ -526,7 +578,23 @@ function rEdit(el){
   $('#eBack').onclick=()=>go('list');$('#eSave').onclick=()=>saveCase();
   if($('#eDel'))$('#eDel').onclick=()=>{if(!confirm(`確定刪除案件 ${c.no}？此動作無法復原。`))return;const gone=DB.cases.find(x=>x.id===c.id);if(gone)removePhotoFiles((gone.photos||[]).map(p=>p.f));DB.cases=DB.cases.filter(x=>x.id!==c.id);persist();ST.dirty=false;toast('已刪除');go('list')};
   $('#tlAdd').onclick=()=>{const text=$('#tlText').value.trim();if(!text){toast('請輸入歷程內容',true);return}
-    ST.draft.timeline.push({id:uid(),at:$('#tlAt').value||nowL(),by:$('#tlBy').value.trim(),type:$('#tlType').value,text});$('#tlText').value='';markDirty();drawTL()};
+    ST.draft.timeline.push({id:uid(),at:ST.tlAt||nowL(),by:$('#tlBy').value.trim(),type:$('#tlType').value,text});$('#tlText').value='';ST.tlAt=nowL();const tw=document.querySelector('[data-dtw="_tl"]');tw.querySelector('.dtd').value=today().replace(/-/g,'/');tw.querySelector('.dtt').value=ST.tlAt.slice(11);commitDT(tw,true);markDirty();drawTL()};
+}
+function commitDT(w,normalize){
+  const p=w.dataset.dtw,dOnly=!!w.dataset.donly,di=w.querySelector('.dtd'),ti=w.querySelector('.dtt'),ok=document.querySelector(`[data-dtok="${p}"]`);
+  const d=parseD(di.value),t=dOnly?'':parseT(ti.value);
+  const bad=m=>{ok.innerHTML=`<span class="dtbad">✗ ${m}</span>`;w.classList.add('bad')};w.classList.remove('bad');
+  if(d===null)return bad('日期看不懂，例：10/8、1008、2026/10/8');
+  if(!dOnly&&t===null)return bad('時間看不懂，例：1430、14:30、下午2');
+  let val='',note='';
+  if(d){let tt=t;if(!dOnly&&!tt){tt=d===today()?nowL().slice(11):'08:30';note=`未填時間，以 ${tt} 計`}val=dOnly?d:d+'T'+tt}
+  else if(t)return bad('請填日期');
+  if(val!==gv(p)){sv(p,val);if(p!=='_tl')markDirty();if(['receivedAt','firstRespAt','measureAt'].includes(p))updDue()}
+  if(normalize){di.value=d?d.replace(/-/g,'/'):'';if(ti&&t)ti.value=t}
+  if(!val){ok.innerHTML='';return}
+  const fut=P(val)-new Date()>864e5;
+  ok.innerHTML=`<span class="dtgood">✓ ${nice(val)}</span>${note?` <span class="hint">${note}</span>`:''}${fut?' <span class="dtbad">⚠ 未來日期</span>':''}`;
+  if(p==='receivedAt'||p==='firstRespAt'||p==='closedAt'){const r=P(ST.draft.receivedAt);if(p!=='receivedAt'&&r&&P(val)<r)ok.innerHTML+=' <span class="dtbad">⚠ 早於受理時間</span>'}
 }
 function famChips(){const m=DB.master.families,v=ST.draft.family;return m.map(x=>`<button type="button" class="fchip ${x===v?'on':''}" data-fam="${esc(x)}">${esc(x)}</button>`).join('')+(v&&!m.includes(v)?`<button type="button" class="fchip on" data-fam="${esc(v)}">${esc(v)}（已不在主檔）</button>`:'')}
 function fillModels(){const fam=ST.draft.family;const set=new Set(DB.cases.filter(c=>!fam||c.family===fam).map(c=>c.model).filter(Boolean));$('#dlModel').innerHTML=[...set].sort().map(x=>`<option value="${esc(x)}">`).join('')}
@@ -611,7 +679,7 @@ function rSet(el){
   el.innerHTML=`
   <div class="card"><h3>主檔維護</h3><div class="hint" style="margin-bottom:10px">每行一筆。雙語項目用「中文 | English」格式（英文用於月報英文版）。修改名稱不會回改既有案件。</div>
     <div class="grid">
-      <label class="fld w2"><span>客戶（格式：客戶名稱 | 廠區1,廠區2）</span><textarea id="mCust" rows="7">${esc(m.customers.map(c=>c.sites?`${c.name} | ${c.sites}`:c.name).join('\n'))}</textarea></label>
+      <label class="fld w2"><span>客戶（格式：客戶名稱 | 縣市1,縣市2；縣市會排在選單最前面）</span><textarea id="mCust" rows="7">${esc(m.customers.map(c=>c.sites?`${c.name} | ${c.sites}`:c.name).join('\n'))}</textarea></label>
       <label class="fld"><span>人員（受理人／負責人）</span><textarea id="mPeople" rows="7">${esc(m.people.join('\n'))}</textarea></label>
       <label class="fld"><span>機種家族</span><textarea id="mFam" rows="7">${esc(m.families.join('\n'))}</textarea><button class="btn sm" id="famImp" type="button" style="margin-top:4px">從報工 JSON 匯入機種</button></label>
       <label class="fld w2"><span>問題分類（中文 | English）</span><textarea id="mCat" rows="8">${esc(pair(m.categories))}</textarea></label>
@@ -651,15 +719,15 @@ function sevRow(s){return`<tr><td><input data-k="code" value="${esc(s.code)}" st
 function loadSample(){
   const m=DB.master;
   const addC=(name,sites)=>{if(!m.customers.some(c=>c.name===name))m.customers.push({name,sites})};
-  addC('範例客戶甲','竹科一廠,竹科二廠');addC('範例客戶乙','中科廠');addC('範例客戶丙','南科廠');
+  addC('範例客戶甲','新竹市,新竹縣');addC('範例客戶乙','臺中市');addC('範例客戶丙','臺南市');
   ['Coos','Addy','鄧先生','工程師A','工程師B'].forEach(p=>{if(!m.people.includes(p))m.people.push(p)});
   const b=new Date(),dt=(off,h,mi=0)=>{const d=new Date(b);d.setDate(d.getDate()-off);d.setHours(h,mi,0,0);return toLocal(d)};
   const L=[
-    {receivedAt:dt(45,9),source:'Mail',receiver:'Coos',customer:'範例客戶甲',site:'竹科一廠',contact:'王課長',family:'COBRA',model:'DS-200',serial:'SN10021',severity:'A',owner:'工程師A',desc:'機台運轉中跳機，控制器顯示馬達過載告警，產線停機。',firstRespAt:dt(45,10,30),category:'停機/無法啟動',handle:'更換/借機',measureAt:dt(44,9).slice(0,10),phenomenon:'到場量測馬達電流偏高 18%，軸承有異音。',containment:'先提供借機，當日恢復生產。',result:'回廠更換軸承後測試 72 小時正常，已裝回。',custReply:'客戶確認運轉正常。',custConfirmAt:dt(38,10).slice(0,10),status:'closed',closedAt:dt(37,16),costType:'保固',rootCause:'軸承潤滑劣化，保養週期過長。',permanent:'同型機保養週期由 12 個月調整為 6 個月。'},
-    {receivedAt:dt(30,14),source:'電話',receiver:'Coos',customer:'範例客戶乙',site:'中科廠',family:'Puma',model:'RB-500',serial:'SN20877',severity:'B',owner:'工程師B',desc:'抽速不足，製程腔體抽到底壓時間變長約 2 分鐘。',firstRespAt:dt(29,9),category:'抽速不足/真空度異常',handle:'派工到場',measureAt:dt(27,9).slice(0,10),phenomenon:'前級管路有洩漏。',containment:'更換管路墊片。',result:'洩漏排除，抽氣時間恢復。',status:'closed',closedAt:dt(24,17),costType:'合約內',rootCause:'墊片老化。',permanent:'加入年度保養檢查項目。'},
-    {receivedAt:dt(6,11),source:'業務轉達',receiver:'Addy',customer:'範例客戶丙',site:'南科廠',family:'Seco',model:'TM-700',serial:'SN30112',severity:'B',owner:'工程師A',desc:'客戶反映維修後一週又出現異音。',firstRespAt:dt(5,15),category:'維修品質',handle:'回廠維修',phenomenon:'客戶提供錄音，高頻異音。',containment:'安排回廠檢測。',status:'wip'},
-    {receivedAt:dt(2,8,40),source:'電話',receiver:'Coos',customer:'範例客戶甲',site:'竹科二廠',family:'COBRA',model:'DS-300',serial:'SN10388',severity:'A',owner:'工程師B',desc:'冷卻水溫度告警，機台自動降載。',category:'過熱',status:'new'},
-    {receivedAt:dt(1,16),source:'Mail',receiver:'Addy',customer:'範例客戶乙',site:'中科廠',family:'R5',model:'RV-40',severity:'C',owner:'Coos',desc:'報價單金額與合約價不一致，請確認。',firstRespAt:dt(0,9),category:'報價/帳務',handle:'遠端/電話處理',result:'已重新開立報價單寄出。',status:'confirm'}
+    {receivedAt:dt(45,9),source:'Mail',receiver:'Coos',customer:'範例客戶甲',site:'新竹市',contact:'王大明',contactDept:'設備課',contactTitle:'課長',mobile:'0912-345-678',tel:'03-5678123',ext:'2301',email:'wang@example.com',family:'COBRA',model:'DS-200',serial:'SN10021',severity:'A',owner:'工程師A',desc:'機台運轉中跳機，控制器顯示馬達過載告警，產線停機。',firstRespAt:dt(45,10,30),category:'停機/無法啟動',handle:'更換/借機',measureAt:dt(44,9).slice(0,10),phenomenon:'到場量測馬達電流偏高 18%，軸承有異音。',containment:'先提供借機，當日恢復生產。',result:'回廠更換軸承後測試 72 小時正常，已裝回。',custReply:'客戶確認運轉正常。',custConfirmAt:dt(38,10).slice(0,10),status:'closed',closedAt:dt(37,16),costType:'保固',rootCause:'軸承潤滑劣化，保養週期過長。',permanent:'同型機保養週期由 12 個月調整為 6 個月。'},
+    {receivedAt:dt(30,14),source:'電話',receiver:'Coos',customer:'範例客戶乙',site:'臺中市',family:'Puma',model:'RB-500',serial:'SN20877',severity:'B',owner:'工程師B',desc:'抽速不足，製程腔體抽到底壓時間變長約 2 分鐘。',firstRespAt:dt(29,9),category:'抽速不足/真空度異常',handle:'派工到場',measureAt:dt(27,9).slice(0,10),phenomenon:'前級管路有洩漏。',containment:'更換管路墊片。',result:'洩漏排除，抽氣時間恢復。',status:'closed',closedAt:dt(24,17),costType:'合約內',rootCause:'墊片老化。',permanent:'加入年度保養檢查項目。'},
+    {receivedAt:dt(6,11),source:'業務轉達',receiver:'Addy',customer:'範例客戶丙',site:'臺南市',family:'Seco',model:'TM-700',serial:'SN30112',severity:'B',owner:'工程師A',desc:'客戶反映維修後一週又出現異音。',firstRespAt:dt(5,15),category:'維修品質',handle:'回廠維修',phenomenon:'客戶提供錄音，高頻異音。',containment:'安排回廠檢測。',status:'wip'},
+    {receivedAt:dt(2,8,40),source:'電話',receiver:'Coos',customer:'範例客戶甲',site:'新竹縣',family:'COBRA',model:'DS-300',serial:'SN10388',severity:'A',owner:'工程師B',desc:'冷卻水溫度告警，機台自動降載。',category:'過熱',status:'new'},
+    {receivedAt:dt(1,16),source:'Mail',receiver:'Addy',customer:'範例客戶乙',site:'臺中市',family:'R5',model:'RV-40',severity:'C',owner:'Coos',desc:'報價單金額與合約價不一致，請確認。',firstRespAt:dt(0,9),category:'報價/帳務',handle:'遠端/電話處理',result:'已重新開立報價單寄出。',status:'confirm'}
   ];
   L.sort((a,c)=>a.receivedAt.localeCompare(c.receivedAt)).forEach(o=>{const c=Object.assign(blankCase(),o);c.no=genNo(c);c.createdAt=c.updatedAt=new Date().toISOString();c.photos=[];c.timeline.push({id:uid(),at:c.receivedAt,by:c.receiver,type:c.source==='電話'?'電話':'Mail',text:'受理客戶反映（範例）'});DB.cases.push(c)});
 }
