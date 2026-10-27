@@ -137,7 +137,7 @@ input.invalid{border-color:var(--bad)!important;background:#fff6f6!important}
 <datalist id="dlPeople"></datalist><datalist id="dlCust"></datalist><datalist id="dlSite"></datalist><datalist id="dlModel"></datalist><datalist id="dlContact"></datalist>
 <script>
 'use strict';
-const VER='V1.30', SCHEMA=1, LS='CQ_DB';
+const VER='V2.0', SCHEMA=1, LS='CQ_DB';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -192,52 +192,146 @@ function persist(){DB.updatedAt=new Date().toISOString();try{localStorage.setIte
 function toast(msg,err){const t=$('#toast');t.textContent=msg;t.className='toast on'+(err?' err':'');clearTimeout(toast.t);toast.t=setTimeout(()=>t.className='toast',2600)}
 function genNo(c){const d=P(c.receivedAt)||new Date();const pre=`CQ-${String(d.getFullYear()).slice(2)}${pad(d.getMonth()+1)}-`;let m=0;DB.cases.forEach(x=>{if(x.no&&x.no.startsWith(pre)){const n=parseInt(x.no.slice(pre.length),10);if(n>m)m=n}});return pre+String(m+1).padStart(3,'0')}
 
-/* ---------- 資料夾同步 (File System Access) ---------- */
+/* ---------- 資料夾同步 V2：每案一檔（多人共用，可放 SharePoint／OneDrive 同步資料夾或 NAS） ----------
+   資料夾結構：cq_settings.json（主檔）＋ cases/cq_<id>.json（每件案件一個檔）＋ photos/、files/（附件）
+   只寫入有變動的檔案；寫入前比對檔案的 updatedAt，被別人改過會詢問，不會默默蓋掉。 */
 const FSA='showDirectoryPicker' in window;
-const DATAFILE='客戶問題點資料.json', PHOTODIR='photos';
-let DH=null,FH=null,PDH=null,FDH=null,fileOK=false,fileStamp='',lastSync=null,saveTimer=null;
+const DATAFILE='客戶問題點資料.json', SETFILE='cq_settings.json', CASEDIR='cases', PHOTODIR='photos', POLL_SEC=30;
+let DH=null,CDH=null,PDH=null,FDH=null,fileOK=false,lastSync=null,saveTimer=null,busy=false,pend=false,dupWarned='';
+const LS_SNAP='CQ_SNAP';
+/* SNAP：最後一次和資料夾一致的狀態（雜湊＋updatedAt），用來判斷「我改的」和「別人改的」 */
+let SNAP=(()=>{try{const s=JSON.parse(localStorage.getItem(LS_SNAP));if(s&&s.cases)return {mh:s.mh||'',mAt:s.mAt||'',cases:new Map(Object.entries(s.cases))}}catch(e){}return {mh:'',mAt:'',cases:new Map()}})();
+const modCache=new Map(); // 檔名 → {mod,data}，沒變的檔案不重讀
+function hsh(s){let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return (h>>>0).toString(36)+'.'+s.length}
+const caseFile=id=>'cq_'+String(id).replace(/[^0-9a-zA-Z_-]/g,'_')+'.json';
+const ME=()=>{try{return localStorage.getItem('CQ_ME')||''}catch(e){return ''}};
+function askMe(){let n=ME();if(n)return n;n=(prompt('請輸入你的名字（記錄是誰修改案件，只問一次）','')||'').trim();if(n)try{localStorage.setItem('CQ_ME',n)}catch(e){}return n}
+function saveSnap(){try{localStorage.setItem(LS_SNAP,JSON.stringify({mh:SNAP.mh,mAt:SNAP.mAt,cases:Object.fromEntries(SNAP.cases)}))}catch(e){}}
 function idb(){return new Promise((res,rej)=>{const r=indexedDB.open('CQ_FS',1);r.onupgradeneeded=()=>r.result.createObjectStore('h');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 async function idbGet(k){try{const db=await idb();return await new Promise(res=>{const q=db.transaction('h').objectStore('h').get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>res(null)})}catch(e){return null}}
 async function idbSet(k,v){try{const db=await idb();db.transaction('h','readwrite').objectStore('h').put(v,k)}catch(e){}}
 async function ensurePerm(ask){if(!DH)return false;try{let p=await DH.queryPermission({mode:'readwrite'});if(p!=='granted'&&ask)p=await DH.requestPermission({mode:'readwrite'});fileOK=p==='granted'}catch(e){fileOK=false}
-  if(fileOK&&!FH){try{FH=await findDataFile(DH);PDH=await DH.getDirectoryHandle(PHOTODIR,{create:true});FDH=await DH.getDirectoryHandle('files',{create:true})}catch(e){fileOK=false;toast('資料夾存取失敗：'+e.message,true)}}return fileOK}
-async function findDataFile(dir){
-  try{return await dir.getFileHandle(DATAFILE)}catch(e){}
-  for await(const[name,h]of dir.entries()){if(h.kind==='file'&&/\.json$/i.test(name)){try{const d=JSON.parse(await(await h.getFile()).text());if(d&&d.app==='CQ')return h}catch(e){}}}
-  return await dir.getFileHandle(DATAFILE,{create:true})
+  if(fileOK&&!CDH){try{CDH=await DH.getDirectoryHandle(CASEDIR,{create:true});PDH=await DH.getDirectoryHandle(PHOTODIR,{create:true});FDH=await DH.getDirectoryHandle('files',{create:true})}catch(e){fileOK=false;toast('資料夾存取失敗：'+e.message,true)}}return fileOK}
+async function readJSON(dir,name){const f=await(await dir.getFileHandle(name)).getFile();return {data:JSON.parse((await f.text()).replace(/^﻿/,'')),mod:f.lastModified}}
+async function writeJSON(dir,name,obj){const fh=await dir.getFileHandle(name,{create:true});const w=await fh.createWritable();await w.write(JSON.stringify(obj,null,1));await w.close();try{return (await fh.getFile()).lastModified}catch(e){return Date.now()}}
+async function exists(dir,name){try{await dir.getFileHandle(name);return true}catch(e){return false}}
+const normCase=c=>migrate({master:DB.master,cases:[structuredClone(c)]}).cases[0];
+async function linkDir(){try{const h=await showDirectoryPicker({id:'cq',mode:'readwrite'});DH=h;CDH=null;PDH=null;FDH=null;photoCache.clear();modCache.clear();SNAP={mh:'',mAt:'',cases:new Map()};saveSnap();await idbSet('dh',h);await loadFromFile(true)}catch(e){if(e.name!=='AbortError')toast('連結失敗：'+e.message,true)}}
+
+/* 第一次連結：舊版單一檔自動轉換，或空資料夾以本機資料建立 */
+async function prepareFolder(){
+  if(await exists(DH,SETFILE)){if(await exists(DH,DATAFILE)&&dupWarned!=='old'){dupWarned='old';toast('資料夾裡有舊版「'+DATAFILE+'」：可能有電腦還在用 V1 版程式，請更新到 V2',true)}return true}
+  let old=null;try{old=(await readJSON(DH,DATAFILE)).data}catch(e){}
+  let n=0;for await(const [nm,h] of CDH.entries())if(h.kind==='file'&&/\.json$/i.test(nm))n++;
+  if(old&&old.app==='CQ'){
+    if(!confirm(`這個資料夾是舊版格式（${(old.cases||[]).length} 件案件存在同一個檔案）。\n\n要轉換成多人共用格式（V2）嗎？\n・每件案件存成一個檔案（cases 資料夾），多人同時修改不同案件不會互相覆蓋\n・舊檔改名保留為備份\n・轉換後所有電腦都要改用 V2 版程式`))return false;
+    const d=migrate(old);
+    await writeJSON(DH,SETFILE,{app:'CQ-settings',schemaVer:2,updatedAt:new Date().toISOString(),updatedBy:ME(),master:d.master});
+    for(const c of d.cases)await writeJSON(CDH,caseFile(c.id),{app:'CQ-case',schemaVer:2,data:c});
+    await writeJSON(DH,'客戶問題點資料_V1備份_'+today()+'.json',old);
+    try{await DH.removeEntry(DATAFILE)}catch(e){}
+    DB=d;SNAP={mh:'',mAt:'',cases:new Map()};modCache.clear();
+    toast(`已轉換：${d.cases.length} 件案件`);return true}
+  if(!n){
+    if(DB.cases.length&&!confirm(`這個資料夾還沒有資料。\n要把這台電腦目前的 ${DB.cases.length} 件案件寫入資料夾嗎？\n（取消＝從空白開始）`)){DB={...blankDB(),master:DB.master}}
+    await writeJSON(DH,SETFILE,{app:'CQ-settings',schemaVer:2,updatedAt:new Date().toISOString(),updatedBy:ME(),master:DB.master});
+    for(const c of DB.cases)await writeJSON(CDH,caseFile(c.id),{app:'CQ-case',schemaVer:2,data:c});
+    SNAP={mh:'',mAt:'',cases:new Map()};return true}
+  await writeJSON(DH,SETFILE,{app:'CQ-settings',schemaVer:2,updatedAt:new Date().toISOString(),updatedBy:ME(),master:DB.master});
+  return true;
 }
-async function linkDir(){try{const h=await showDirectoryPicker({id:'cq',mode:'readwrite'});DH=h;FH=null;PDH=null;FDH=null;photoCache.clear();await idbSet('dh',h);await loadFromFile(true)}catch(e){if(e.name!=='AbortError')toast('連結失敗：'+e.message,true)}}
-async function loadFromFile(ask){
+/* 讀取資料夾並和本機合併：本機有尚未寫入的修改就保留，其餘以資料夾為準。回傳變動件數 */
+async function readAll(){
+  let changed=0;const first=!SNAP.mh&&SNAP.cases.size===0;
+  const s=await readJSON(DH,SETFILE);if(!s.data||s.data.app!=='CQ-settings')throw new Error(SETFILE+' 格式不對');
+  const fm=migrate({master:s.data.master,cases:[]}).master,fmh=hsh(JSON.stringify(fm)),fmAt=s.data.updatedAt||'';
+  const localDirtyM=SNAP.mh&&hsh(JSON.stringify(DB.master))!==SNAP.mh;
+  if(!(localDirtyM&&fmAt===SNAP.mAt)){if(localDirtyM)toast('主檔設定剛被 '+(s.data.updatedBy||'其他電腦')+' 修改，已載入對方版本，請重新修改',true);if(hsh(JSON.stringify(DB.master))!==fmh){DB.master=fm;changed++}SNAP.mh=fmh;SNAP.mAt=fmAt}
+  const folder=new Map();
+  for await(const [nm,h] of CDH.entries()){
+    if(h.kind!=='file'||!/^cq_.*\.json$/i.test(nm))continue;
+    const f=await h.getFile();const mc=modCache.get(nm);let d;
+    if(mc&&mc.mod===f.lastModified)d=mc.data;
+    else{try{const j=JSON.parse((await f.text()).replace(/^﻿/,''));if(!j||j.app!=='CQ-case'||!j.data||!j.data.id)continue;d=j.data;modCache.set(nm,{mod:f.lastModified,data:d})}catch(e){continue}}
+    folder.set(d.id,{d,mod:f.lastModified});
+  }
+  const out=[],seen=new Set();
+  for(const [id,{d,mod}] of folder){
+    seen.add(id);const loc=DB.cases.find(x=>x.id===id),sn=SNAP.cases.get(id);
+    if(!loc&&sn&&(d.updatedAt||'')===sn.at)continue;                              // 我刪除了、尚未寫入（別人改過就保留對方版本）
+    const fc=normCase(d),fh=hsh(JSON.stringify(fc));
+    const localDirty=loc&&sn&&hsh(JSON.stringify(loc))!==sn.h;
+    if(localDirty){out.push(loc);continue}                                        // 我改了還沒寫入 → 保留，寫入時若別人也改過會詢問
+    if(!loc||hsh(JSON.stringify(loc))!==fh)changed++;
+    out.push(fc);SNAP.cases.set(id,{h:fh,at:d.updatedAt||'',mod});
+  }
+  const extra=DB.cases.filter(c=>!seen.has(c.id)&&!SNAP.cases.has(c.id));
+  let keepExtra=!first||!extra.length||!folder.size||confirm(`這台電腦有 ${extra.length} 件案件不在共用資料夾裡（可能是舊的本機暫存）。\n\n確定＝加入共用資料夾\n取消＝捨棄這些本機暫存，以共用資料夾為準`);
+  for(const c of DB.cases){if(seen.has(c.id))continue;
+    if(!SNAP.cases.has(c.id)){if(keepExtra)out.push(c);else changed++;continue}  // 本機新增、尚未寫入
+    SNAP.cases.delete(c.id);changed++}                                            // 別人刪除
+  out.sort((a,b)=>String(a.receivedAt||'').localeCompare(String(b.receivedAt||'')));
+  DB.cases=out;
+  const nos={};DB.cases.forEach(c=>{if(c.no)(nos[c.no]=nos[c.no]||[]).push(c)});
+  const dup=Object.keys(nos).filter(k=>nos[k].length>1);
+  if(dup.length&&dupWarned!==dup.join()){dupWarned=dup.join();toast('案號重複：'+dup.join('、')+'（兩台電腦同時新增），請在其中一件的處理歷程註明',true)}
+  return changed;
+}
+async function loadFromFile(ask,quiet){
   if(!await ensurePerm(ask)){updFile();return}
+  if(busy){pend=true;return}busy=true;
   try{
-    const txt=await(await FH.getFile()).text();
-    if(!txt.trim()){await writeFile(true);toast('已在資料夾建立 '+FH.name);return}
-    const d=JSON.parse(txt);
-    if(d.app!=='CQ'){alert('資料檔不是本系統的格式');updFile();return}
-    if(DB.cases.length&&DB.updatedAt&&d.updatedAt&&DB.updatedAt>d.updatedAt&&!confirm('本機資料比資料夾裡的檔案還新。\n確定＝以檔案內容覆蓋本機\n取消＝以本機資料覆寫檔案')){await writeFile(true);return}
-    DB=migrate(d);fileStamp=d.updatedAt||'';lastSync=new Date();
-    localStorage.setItem(LS,JSON.stringify(DB));
+    if(!await prepareFolder()){busy=false;updFile();return}
+    const ch=await readAll();lastSync=new Date();
+    try{localStorage.setItem(LS,JSON.stringify(DB))}catch(e){}saveSnap();
     if(ST.tab==='edit'&&ST.draft&&!ST.isNew&&!ST.dirty){const c=DB.cases.find(x=>x.id===ST.draft.id);ST.draft=c?structuredClone(c):null;if(!c)ST.tab='list'}
-    updFile();render();toast('已載入資料')
-  }catch(e){toast('讀取資料檔失敗：'+e.message,true);updFile()}
+    if(ch||!quiet)render();if(!quiet)toast('已載入資料（'+DB.cases.length+' 件）');else if(ch)toast(`已更新 ${ch} 筆（其他電腦修改）`);
+  }catch(e){toast('讀取資料失敗：'+e.message,true)}
+  busy=false;updFile();if(pend){pend=false;scheduleFileSave()}
 }
-async function writeFile(force){
+/* 寫入：只寫有變動的案件／主檔，寫入前檢查是否被別人改過 */
+async function writeFile(){
   if(!DH||!await ensurePerm(false)){updFile();return}
+  if(busy){pend=true;return}busy=true;const conf=[];
   try{
-    if(!force){const t=await(await FH.getFile()).text();if(t.trim()){const d=JSON.parse(t);if(d.updatedAt&&fileStamp&&d.updatedAt>fileStamp&&d.updatedAt!==DB.updatedAt){
-      if(!confirm('資料檔已被其他電腦更新（'+d.updatedAt.replace('T',' ').slice(0,16)+' UTC）。\n確定＝以目前資料覆蓋檔案\n取消＝改載入檔案內容'))return loadFromFile(false)}}}
-    const w=await FH.createWritable();await w.write(JSON.stringify(DB,null,1));await w.close();
-    fileStamp=DB.updatedAt;lastSync=new Date()
-  }catch(e){toast('寫入資料檔失敗：'+e.message,true)}
-  updFile()
+    if(!await prepareFolder()){busy=false;updFile();return}
+    await readAll();                                                               // 先抓別人的最新資料（也讓新案號不重複）
+    const nosTaken=new Set(DB.cases.filter(c=>SNAP.cases.has(c.id)).map(c=>c.no));
+    for(const c of DB.cases)if(!SNAP.cases.has(c.id)&&c.no&&nosTaken.has(c.no)){const o=c.no;c.no='';c.no=genNo(c);c.timeline=c.timeline||[];c.timeline.push({id:uid(),at:nowL(),by:ME(),type:'其他',text:`案號 ${o} 已被其他電腦使用，自動改為 ${c.no}`,auto:true});nosTaken.add(c.no);toast(`案號 ${o} 已被使用，改為 ${c.no}`,true)}
+    const mj=JSON.stringify(DB.master),mh=hsh(mj);
+    if(mh!==SNAP.mh){
+      const at=new Date().toISOString();await writeJSON(DH,SETFILE,{app:'CQ-settings',schemaVer:2,updatedAt:at,updatedBy:ME(),master:DB.master});SNAP.mh=mh;SNAP.mAt=at}
+    const ids=new Set();
+    for(const c of DB.cases){
+      ids.add(c.id);const j=JSON.stringify(c),h=hsh(j),sn=SNAP.cases.get(c.id);
+      if(sn&&sn.h===h)continue;
+      let cur=null;try{cur=await readJSON(CDH,caseFile(c.id))}catch(e){}
+      if(cur&&sn&&cur.data&&cur.data.data&&(cur.data.data.updatedAt||'')!==sn.at){conf.push({c,cur});continue}
+      const mod=await writeJSON(CDH,caseFile(c.id),{app:'CQ-case',schemaVer:2,data:c});
+      SNAP.cases.set(c.id,{h,at:c.updatedAt||'',mod});modCache.delete(caseFile(c.id));
+    }
+    for(const id of [...SNAP.cases.keys()]){if(ids.has(id))continue;try{await CDH.removeEntry(caseFile(id))}catch(e){}SNAP.cases.delete(id);modCache.delete(caseFile(id))}
+    lastSync=new Date();try{localStorage.setItem(LS,JSON.stringify(DB))}catch(e){}saveSnap();
+  }catch(e){toast('寫入資料失敗：'+e.message,true)}
+  busy=false;
+  for(const {c,cur} of conf){
+    const o=cur.data.data,by=o.updatedBy||'其他電腦',t=String(o.updatedAt||'').replace('T',' ').slice(0,16);
+    if(confirm(`案件 ${c.no} 剛被 ${by} 修改（${t} UTC）。\n\n確定＝用我的版本覆蓋\n取消＝放棄我的修改，載入 ${by} 的版本`)){SNAP.cases.set(c.id,{h:'',at:o.updatedAt||'',mod:cur.mod});pend=true}
+    else{const d=normCase(o),i=DB.cases.findIndex(x=>x.id===c.id);if(i>=0)DB.cases[i]=d;SNAP.cases.set(c.id,{h:hsh(JSON.stringify(d)),at:o.updatedAt||'',mod:cur.mod});
+      if(ST.tab==='edit'&&ST.draft&&ST.draft.id===c.id){ST.draft=structuredClone(d);ST.dirty=false}render();toast('已載入 '+by+' 的版本')}
+  }
+  if(conf.length){try{localStorage.setItem(LS,JSON.stringify(DB))}catch(e){}saveSnap()}
+  updFile();if(pend){pend=false;scheduleFileSave()}
 }
-function scheduleFileSave(){if(!DH||!fileOK)return;clearTimeout(saveTimer);saveTimer=setTimeout(()=>writeFile(false),600)}
+function scheduleFileSave(){if(!DH||!fileOK)return;clearTimeout(saveTimer);saveTimer=setTimeout(()=>writeFile(),600)}
+/* 定時讀取其他電腦的修改（編輯中且未存檔時暫停） */
+setInterval(()=>{if(DH&&fileOK&&!busy&&document.visibilityState==='visible'&&!(ST.tab==='edit'&&ST.dirty))loadFromFile(false,true)},POLL_SEC*1000);
 function updFile(){
   const fb=$('#filebar');let s;
   if(!FSA)s=`<span class="fstat warn">此瀏覽器不支援資料夾存取（請用 Chrome／Edge），目前只能匯入／匯出 JSON，無法存附件</span><button class="btn" data-a="imp">匯入 JSON</button><button class="btn pri" data-a="exp">匯出 JSON</button>`;
   else if(!DH)s=`<span class="fstat warn">資料夾：未連結（資料只存在本機瀏覽器，無法存附件）</span><button class="btn pri" data-a="link">連結資料夾</button>`;
   else if(!fileOK)s=`<span class="fstat warn">資料夾：${esc(DH.name)}　⚠ 需重新授權</span><button class="btn pri" data-a="perm">重新連結</button><button class="btn" data-a="link">換資料夾</button>`;
-  else s=`<span class="fstat">資料夾：${esc(DH.name)}　✓ ${lastSync?'同步 '+pad(lastSync.getHours())+':'+pad(lastSync.getMinutes()):''}</span><button class="btn" data-a="reload">重新載入</button><button class="btn" data-a="link">換資料夾</button>`;
+  else s=`<span class="fstat">資料夾：${esc(DH.name)}　✓ ${lastSync?'同步 '+pad(lastSync.getHours())+':'+pad(lastSync.getMinutes()):''}${ME()?'　｜　'+esc(ME()):''}</span><button class="btn" data-a="reload">重新載入</button><button class="btn" data-a="link">換資料夾</button>`;
   fb.innerHTML=s
 }
 $('#filebar').onclick=e=>{const a=e.target.dataset.a;if(!a)return;
@@ -326,7 +420,7 @@ function findFamilies(obj){const out=new Set();(function walk(o,depth){if(!o||ty
 $('#nav').onclick=e=>{const t=e.target.dataset.t;if(!t)return;if(t==='new')newCase();else go(t)};
 function leaveOK(){return !(ST.tab==='edit'&&ST.dirty)||confirm('案件有未儲存的變更，確定離開？')}
 function go(tab){if(tab!==ST.tab&&!leaveOK())return;if(tab!=='edit'){ST.draft=null;ST.dirty=false}ST.tab=tab;render();window.scrollTo(0,0)}
-function newCase(){if(!leaveOK())return;ST.draft=blankCase();ST.isNew=true;ST.dirty=false;ST.tab='edit';render();window.scrollTo(0,0)}
+function newCase(){if(!leaveOK())return;if(DH&&fileOK&&!busy)loadFromFile(false,true);ST.draft=blankCase();ST.isNew=true;ST.dirty=false;ST.tab='edit';render();window.scrollTo(0,0)}
 function openCase(id){const c=DB.cases.find(x=>x.id===id);if(!c||!leaveOK())return;ST.draft=structuredClone(c);ST.isNew=false;ST.dirty=false;ST.tab='edit';render();window.scrollTo(0,0)}
 window.addEventListener('beforeunload',e=>{if(ST.tab==='edit'&&ST.dirty){e.preventDefault();e.returnValue=''}});
 function fillLists(){const m=DB.master;$('#dlPeople').innerHTML=m.people.map(p=>`<option value="${esc(p)}">`).join('');$('#dlCust').innerHTML=m.customers.map(c=>`<option value="${esc(c.name)}">`).join('')}
@@ -642,7 +736,7 @@ function saveCase(silent){
   if(c.status==='closed'&&!c.closedAt)c.closedAt=nowL();
   const ts=new Date().toISOString();
   if(ST.isNew||!c.no){c.no=genNo(c);c.createdAt=ts}
-  c.updatedAt=ts;
+  c.updatedAt=ts;c.updatedBy=(DH&&fileOK?askMe():ME())||c.updatedBy||'';
   const i=DB.cases.findIndex(x=>x.id===c.id);
   if(i>=0){const keep=new Set((c.atts||[]).map(a=>a.dir+'/'+a.f));removeAttFiles((DB.cases[i].atts||[]).filter(a=>!keep.has(a.dir+'/'+a.f)))}
   if(i>=0)DB.cases[i]=structuredClone(c);else DB.cases.push(structuredClone(c));
@@ -727,7 +821,7 @@ function rSet(el){
       <button class="btn" id="dExp">匯出 JSON 備份</button><button class="btn" id="dImp">匯入 JSON（取代全部）</button>
       <button class="btn" id="dSample">載入範例資料</button><button class="btn danger" id="dClr">清除全部案件</button>
     </div>
-    <p class="hint" style="margin-top:10px">共享方式：按右上角「連結資料夾」，選 SharePoint 同步到本機的資料夾。系統會在裡面建立「客戶問題點資料.json」和 photos（照片）與 files（其他附件）子資料夾；每次存檔自動寫回，寫入前會檢查是否有他人較新的變更。JSON 備份不含照片，附件請以 photos、files 資料夾為準。<br>目前：${DB.cases.length} 件案件，最後更新 ${DB.updatedAt?new Date(DB.updatedAt).toLocaleString('zh-TW',{hour12:false}):'—'}，資料版本 schema ${SCHEMA}，程式 ${VER}。</p>
+    <p class="hint" style="margin-top:10px">共享方式：按右上角「連結資料夾」，選 SharePoint 同步到本機的資料夾。系統會在裡面建立 cq_settings.json（主檔）、cases（每件案件一個檔）、photos（照片）與 files（其他附件）；多人同時修改不同案件不會互相覆蓋，同一件被別人改過會先詢問；每 30 秒自動讀取其他電腦的修改。舊版的「客戶問題點資料.json」第一次連結時會自動轉換。JSON 備份不含照片，附件請以 photos、files 資料夾為準。<br>目前：${DB.cases.length} 件案件，最後更新 ${DB.updatedAt?new Date(DB.updatedAt).toLocaleString('zh-TW',{hour12:false}):'—'}，資料版本 schema ${SCHEMA}，程式 ${VER}。</p>
   </div>`;
   const lines=id=>$('#'+id).value.split('\n').map(s=>s.trim()).filter(Boolean);
   const pairs=id=>lines(id).map(l=>{const[zh,en]=l.split('|').map(s=>s.trim());return{zh,en:en||''}}).filter(x=>x.zh);
